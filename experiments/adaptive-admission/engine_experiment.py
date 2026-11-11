@@ -8,6 +8,8 @@ import time
 import urllib.error
 import urllib.request
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from itertools import groupby
 from pathlib import Path
 
 from benchmark import Cache
@@ -109,54 +111,69 @@ def open_request(request):
         raise RuntimeError(error.read().decode("utf-8", errors="replace")) from error
 
 
-def run(seed, mode, model):
-    for index, (phase, key, length) in enumerate(workload(seed)):
-        salt = f"admission-bench-{phase}-{key}"
-        tokens = random.Random(salt).choices(range(1000, 8000), k=length)
-        payload = dict(model=model, prompt=tokens + [9000 + index], cache_salt=salt,
-                       temperature=0, max_tokens=1, stream=True, ignore_eos=True,
-                       add_special_tokens=False, return_token_ids=True,
-                       stream_options={"include_usage": True})
-        req = urllib.request.Request("http://127.0.0.1:8000/v1/completions",
-                                     json.dumps(payload).encode(),
-                                     {"Content-Type": "application/json"})
-        started = time.perf_counter()
-        first = None
-        usage = None
-        output = []
-        token_ids = []
-        with open_request(req) as response:
-            for line in response:
-                if not line.startswith(b"data:") or line[5:].strip() == b"[DONE]":
-                    continue
-                event = json.loads(line[5:])
-                for choice in event.get("choices", []):
-                    if choice.get("token_ids"):
-                        if first is None:
-                            first = time.perf_counter()
-                        token_ids.extend(choice["token_ids"])
-                    output.append(choice.get("text", ""))
-                usage = event.get("usage") or usage
-        if first is None or usage is None or len(token_ids) != 1:
-            raise RuntimeError("Incomplete vLLM response")
-        if usage["prompt_tokens"] != length + 1:
-            raise RuntimeError("Server changed the supplied token count")
-        details = usage.get("prompt_tokens_details") or {}
-        print(json.dumps(dict(mode=mode, index=index, phase=phase, salt=salt,
-                              prompt_tokens=usage["prompt_tokens"],
-                              cached_tokens=details.get("cached_tokens") or 0,
-                              ttft_ms=(first - started) * 1000,
-                              total_ms=(time.perf_counter() - started) * 1000,
-                              output_token=token_ids[0], text="".join(output))), flush=True)
+def measure(model, mode, item):
+    index, (phase, key, length) = item
+    salt = f"admission-bench-{phase}-{key}"
+    tokens = random.Random(salt).choices(range(1000, 8000), k=length)
+    payload = dict(model=model, prompt=tokens + [9000 + index], cache_salt=salt,
+                   temperature=0, max_tokens=1, stream=True, ignore_eos=True,
+                   add_special_tokens=False, return_token_ids=True,
+                   stream_options={"include_usage": True})
+    req = urllib.request.Request("http://127.0.0.1:8000/v1/completions",
+                                 json.dumps(payload).encode(),
+                                 {"Content-Type": "application/json"})
+    started = time.perf_counter()
+    first = None
+    usage = None
+    output = []
+    token_ids = []
+    with open_request(req) as response:
+        for line in response:
+            if not line.startswith(b"data:") or line[5:].strip() == b"[DONE]":
+                continue
+            event = json.loads(line[5:])
+            for choice in event.get("choices", []):
+                if choice.get("token_ids"):
+                    if first is None:
+                        first = time.perf_counter()
+                    token_ids.extend(choice["token_ids"])
+                output.append(choice.get("text", ""))
+            usage = event.get("usage") or usage
+    if first is None or usage is None or len(token_ids) != 1:
+        raise RuntimeError("Incomplete vLLM response")
+    if usage["prompt_tokens"] != length + 1:
+        raise RuntimeError("Server changed the supplied token count")
+    details = usage.get("prompt_tokens_details") or {}
+    return dict(mode=mode, index=index, phase=phase, salt=salt,
+                          prompt_tokens=usage["prompt_tokens"],
+                          cached_tokens=details.get("cached_tokens") or 0,
+                          ttft_ms=(first - started) * 1000,
+                          total_ms=(time.perf_counter() - started) * 1000,
+                          output_token=token_ids[0], text="".join(output))
+
+
+def run(seed, mode, model, concurrency, limit):
+    requests = enumerate(workload(seed))
+    with ThreadPoolExecutor(max_workers=concurrency) as workers:
+        for _, group in groupby(requests, key=lambda item: item[1][0]):
+            items = list(group)[:limit]
+            started = time.perf_counter()
+            for row in workers.map(lambda item: measure(model, mode, item), items):
+                row["wall_ms"] = (time.perf_counter() - started) * 1000
+                print(json.dumps(row), flush=True)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("patch", "lru", "adaptive"))
+    parser.add_argument("mode", choices=("patch", "lru", "adaptive", "cost"))
     parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct-2507")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--requests-per-phase", type=int, default=256)
     args = parser.parse_args()
+    if args.concurrency < 1 or not 1 <= args.requests_per_phase <= 256:
+        parser.error("Expected positive concurrency and 1 to 256 requests per phase")
     if args.mode == "patch":
         install_patch()
     else:
-        run(args.seed, args.mode, args.model)
+        run(args.seed, args.mode, args.model, args.concurrency, args.requests_per_phase)

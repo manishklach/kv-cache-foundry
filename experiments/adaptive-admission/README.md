@@ -4,6 +4,27 @@ A prefix cache with limited space can evict useful KV state when many requests u
 
 ## H100 engine benchmark
 
+### Concurrent cost-ranked block eviction
+
+The [live allocator patch](live_eviction.py) ranks free blocks with [C code](block_rank.c) when an allocation would reuse cached blocks. Uncached blocks come first. Cached blocks are ranked by age plus estimated rebuild time per token. Queue order breaks ties. vLLM retains responsibility for reference counts and cache hash eviction. This is a block-level adaptation of the whole-prefix replay below.
+
+On one Runpod H100 SXM, each policy served 512 requests per trial at concurrency four. Both orders used the same trace, vLLM 0.32.0, Qwen3-4B-Instruct-2507, eager execution, and 32,800 tokens of reported KV cache capacity.
+
+| Run order | Policy | Uncached tokens | Median TTFT | p95 TTFT | Requests/s |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Forward | LRU | 633,056 | 95.97 ms | 206.18 ms | 34.54 |
+| Forward | Adaptive admission | 670,112 | 92.05 ms | 206.15 ms | 35.88 |
+| Forward | Cost-ranked eviction | 614,208 | 98.52 ms | 199.89 ms | 36.43 |
+| Reverse | Cost-ranked eviction | 599,808 | 96.18 ms | 203.14 ms | 35.92 |
+| Reverse | Adaptive admission | 674,016 | 91.92 ms | 211.06 ms | 37.00 |
+| Reverse | LRU | 631,168 | 102.19 ms | 196.55 ms | 35.28 |
+
+Cost-ranked eviction reduced uncached tokens by 3.0% and 5.0% versus LRU and increased request rate by 5.5% and 1.8%. p95 moved in opposite directions. Throughput uses completed requests divided by the sum of the four phase wall times. Against the first LRU trial, the second LRU run matched 507/512 output tokens. The two cost trials matched 507/512 and 506/512. Concurrent arrival order can vary across runs. This test used one synthetic trace and did not isolate the reason for output differences.
+
+Run `bash run_live_eviction.sh` on a compatible Linux NVIDIA GPU host with Python 3.12, Bash, curl, and a C compiler. Analyze the resulting [archive](cost-eviction-live-results.tar.gz) with `python3 summarize_live.py cost-eviction-live-results.tar.gz`.
+
+### Sequential adaptive admission
+
 The [engine patch and replay client](engine_experiment.py) modify the KV cache manager in vLLM 0.32.0. The adaptive mode gates insertion of reusable KV blocks for benchmark requests. The baseline uses the engine's normal admission rule. Both runs use real GPU KV allocation, lookup, and LRU eviction.
 
 | Metric | Baseline | Adaptive |
@@ -19,6 +40,29 @@ During one-off traffic, median latency fell from 36.04 ms to 29.52 ms. During pa
 On a Linux NVIDIA GPU machine with Python 3.12, Bash, and curl, run `bash run_gpu.sh`. The runner creates an isolated environment, applies the patch, and writes both per-request traces and server logs to an archive. [Recorded H100 results](kv-admission-gpu-results.tar.gz)
 
 ## Simulation
+
+### Eviction based on H100 rebuild cost
+
+The C replay ranks resident prefixes by estimated rebuild time per token plus an aging term, using GreedyDual-Size. For this experiment each KV token occupies the same number of bytes, so ranking by cost per token also ranks by cost per byte. This adapts an established cache policy to KV prefixes. [GreedyDual-Size paper](https://www.usenix.org/legacy/publications/library/proceedings/usits97/full_papers/cao/cao_html/cao.html)
+
+The cost estimates use the difference between median cold and full-hit time to first token for each prefix size in the saved H100 baseline. The estimates are 1.93 ms for 1,024 tokens, 11.10 ms for 2,048, and 38.34 ms for 4,096. The 512-token cost is extrapolated to 0.97 ms because the baseline had no full hits in that bucket. These are end-to-end latency estimates that include serving overhead. The replay assumes a miss rebuilds the whole prefix.
+
+```bash
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic cost_cache.c -o /tmp/vllm-cost-cache
+python3 cost_replay.py --c-replay /tmp/vllm-cost-cache
+```
+
+The C executable reads integer prefix keys and lengths from standard input and emits missed token counts. The Python harness scores 20 synthetic traces with seeds 100–119 and checks every C decision against its reference implementation. The linear-cost control uses the same C algorithm with a constant cost per token and matches LRU on these traces.
+
+| Cache capacity | Estimated rebuild time vs. LRU with H100 costs | Estimated rebuild time vs. LRU with adaptive admission |
+| ---: | ---: | ---: |
+| 16,384 tokens | 12.2% lower | 10.8% lower |
+| 32,768 tokens | 12.2% lower | 22.0% lower |
+| 65,536 tokens | 3.9% lower | 5.7% higher |
+
+These are modeled rebuild costs. The C replay operates on whole prefixes. The live benchmark above ranks individual blocks and measures serving performance. [Replay results](cost-replay.csv)
+
+### Admission based on missed tokens
 
 This simulation compares three policies at equal cache capacity. All evict the least recently used resident prefix when space runs out.
 

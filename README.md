@@ -1,11 +1,28 @@
 # vLLM Prefix Cache Benchmark
 
-Two Runpod GPU experiments measure how prompt layout and cache admission affect vLLM prefix reuse. Both use Qwen3-4B-Instruct-2507 and vLLM 0.32.0.
+Three Runpod GPU experiments measure how prompt layout, cache admission, and block eviction affect vLLM prefix reuse. Both use Qwen3-4B-Instruct-2507 and vLLM 0.32.0.
 
 | Experiment | GPU | Change | Result |
 | --- | --- | --- | --- |
 | [Prompt order](#h200-prompt-order) | H200 SXM | Put the shared manual before the question and enable prefix caching | 33.3% lower median time to first token with the manual first |
 | [Adaptive cache admission](#h100-adaptive-cache-admission) | H100 SXM | Patch vLLM's KV cache manager to switch admission rules using recent missed-token counts | 8.8% fewer uncached prompt tokens and 6.2% lower median time to first token |
+| [Cost-ranked block eviction](#h100-cost-ranked-block-eviction) | H100 SXM | Rank free KV blocks in C using estimated rebuild time and age | 3.0–5.0% fewer uncached tokens and 1.8–5.5% higher request throughput across two orders |
+
+## H100 cost-ranked block eviction
+
+A live vLLM block allocator patch calls a C ranking function when a new allocation would reuse cached blocks. It ranks uncached blocks first, then ranks cached blocks by age plus estimated rebuild time per token. Rebuild costs come from cold versus full-hit latency measurements on the earlier H100 run. The policy applies [GreedyDual-Size](https://www.usenix.org/legacy/publications/library/proceedings/usits97/full_papers/cao/cao_html/cao.html) to individual KV blocks.
+
+The live benchmark ran LRU, adaptive admission, and cost-ranked eviction in forward and reverse order. Each trial served the same 512 requests at concurrency four and had 32,800 tokens of reported KV cache capacity.
+
+| Cost-ranked eviction vs. LRU | Forward | Reverse |
+| --- | ---: | ---: |
+| Uncached prompt tokens | 633,056 → 614,208 | 631,168 → 599,808 |
+| Requests per second | 34.54 → 36.43 | 35.28 → 35.92 |
+| p95 time to first token | 206.18 → 199.89 ms | 196.55 → 203.14 ms |
+
+Throughput improved in both trials. The p95 result changed direction. Output agreement with the first LRU trial was 507/512 and 506/512 for cost-ranked eviction, and 507/512 for the second LRU trial. The cause of these differences remains unresolved.
+
+The whole-prefix replay separately tests the same cost model at three cache sizes across 20 synthetic traces. It also verifies that the C implementation agrees with the Python reference on every replay decision. [Reproduction steps and all six trials](experiments/adaptive-admission/README.md#concurrent-cost-ranked-block-eviction) · [Live traces and logs](experiments/adaptive-admission/cost-eviction-live-results.tar.gz) · [Replay data](experiments/adaptive-admission/cost-replay.csv)
 
 ## H100 adaptive cache admission
 
