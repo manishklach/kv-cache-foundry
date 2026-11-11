@@ -6,7 +6,7 @@ KV Cache Foundry develops and tests KV-cache policies for LLM inference. It incl
 | --- | --- | --- | --- |
 | [Prompt order](#h200-prompt-order) | H200 SXM | Put the shared manual before the question and enable prefix caching | 33.3% lower median time to first token with the manual first |
 | [Adaptive cache admission](#h100-adaptive-cache-admission) | H100 SXM | Patch vLLM's KV cache manager to switch admission rules using recent missed-token counts | 8.8% fewer uncached prompt tokens and 6.2% lower median time to first token |
-| [Cost-ranked block eviction](#h100-cost-ranked-block-eviction) | H100 SXM | Rank free KV blocks in C using estimated rebuild time and age | 3.0â€“5.0% fewer uncached tokens and 1.8â€“5.5% higher request throughput across two orders |
+| [Cost-ranked block eviction](#h100-cost-ranked-block-eviction) | H100 SXM | Rank free KV blocks in C using estimated rebuild time and age | 3.0–5.0% fewer uncached tokens and 1.8–5.5% higher request throughput across two orders |
 | [Reload versus recompute](#h200-reload-versus-recompute) | H200 SXM | Select the cheaper path using prefix length and copy backlog | 19.2% lower summed time than always reloading across the held-out synthetic grid |
 | [Decode-aware KV reload](#decode-aware-kv-reload-prototype) | H200 SXM | Pace KV writes using live decode latency and allow prefix recomputation | Higher p95 first-token latency in all six settings. All 648 requests matched the reference tokens. |
 
@@ -26,13 +26,13 @@ The live benchmark ran LRU, adaptive admission, and cost-ranked eviction in forw
 
 | Cost-ranked eviction vs. LRU | Forward | Reverse |
 | --- | ---: | ---: |
-| Uncached prompt tokens | 633,056 â†’ 614,208 | 631,168 â†’ 599,808 |
-| Requests per second | 34.54 â†’ 36.43 | 35.28 â†’ 35.92 |
-| p95 time to first token | 206.18 â†’ 199.89 ms | 196.55 â†’ 203.14 ms |
+| Uncached prompt tokens | 633,056 → 614,208 | 631,168 → 599,808 |
+| Requests per second | 34.54 → 36.43 | 35.28 → 35.92 |
+| p95 time to first token | 206.18 → 199.89 ms | 196.55 → 203.14 ms |
 
 Throughput improved in both trials. The p95 result changed direction. Output agreement with the first LRU trial was 507/512 and 506/512 for cost-ranked eviction, and 507/512 for the second LRU trial. The cause of these differences remains unresolved.
 
-The whole-prefix replay separately tests the same cost model at three cache sizes across 20 synthetic traces. It also verifies that the C implementation agrees with the Python reference on every replay decision. [Reproduction steps and all six trials](experiments/adaptive-admission/README.md#concurrent-cost-ranked-block-eviction) Â· [Live traces and logs](experiments/adaptive-admission/cost-eviction-live-results.tar.gz) Â· [Replay data](experiments/adaptive-admission/cost-replay.csv)
+The whole-prefix replay separately tests the same cost model at three cache sizes across 20 synthetic traces. It also verifies that the C implementation agrees with the Python reference on every replay decision. [Reproduction steps and all six trials](experiments/adaptive-admission/README.md#concurrent-cost-ranked-block-eviction) · [Live traces and logs](experiments/adaptive-admission/cost-eviction-live-results.tar.gz) · [Replay data](experiments/adaptive-admission/cost-replay.csv)
 
 ## H100 adaptive cache admission
 
@@ -40,7 +40,7 @@ When many prompts use a prefix only once, admitting every prefix can evict usefu
 
 The engine change is in vLLM's KV cache manager. It gates insertion of newly computed blocks into the reusable cache. Two metadata-only shadow caches estimate how many prompt tokens would miss under first-hit and second-hit admission. Every 32 benchmark requests, the patch picks the rule with fewer missed tokens for the next window, keeping the current rule on ties. It uses only prior requests. A 4,096-token miss therefore counts eight times as much as a 512-token miss. vLLM continues to handle GPU block allocation, cache lookup, and LRU eviction.
 
-Adaptive caching and reuse-based admission have precedents. The contribution here is a reproducible vLLM patch that selects between two admission rules using token-weighted misses, together with a GPU replay that shows where it helps and where it costs more. [ARC prior work](https://www.usenix.org/conference/fast-03/arc-self-tuning-low-overhead-replacement-cache) Â· [vLLM prefix caching design](https://docs.vllm.ai/en/v0.32.0/design/prefix_caching/)
+Adaptive caching and reuse-based admission have precedents. The contribution here is a reproducible vLLM patch that selects between two admission rules using token-weighted misses, together with a GPU replay that shows where it helps and where it costs more. [ARC prior work](https://www.usenix.org/conference/fast-03/arc-self-tuning-low-overhead-replacement-cache) · [vLLM prefix caching design](https://docs.vllm.ai/en/v0.32.0/design/prefix_caching/)
 
 The H100 served 1,024 sequential requests per mode, using 32-token blocks and 32,800 tokens of reported KV cache capacity in both runs. The synthetic workload alternates recurring prefixes mixed with one-off traffic and groups of prefixes that appear exactly twice. Each request generates one token.
 
@@ -54,7 +54,7 @@ The H100 served 1,024 sequential requests per mode, using 32-token blocks and 32
 
 The generated token matched on 1,020 of 1,024 requests. The four differences are unresolved. The run used eager execution, one synthetic trace, a fixed run order, and no request concurrency. The latency figures describe that replay. The separate 20-seed simulation found fewer recomputed tokens at 16,384 and 32,768 tokens of cache capacity and more at 65,536 tokens.
 
-Run `bash experiments/adaptive-admission/run_gpu.sh` on a compatible Linux NVIDIA GPU host with Python 3.12, Bash, and curl. The experiment directory includes the patch, workload generator, runner, simulation, and raw GPU traces with server logs. [Methodology and reproduction](experiments/adaptive-admission/README.md) Â· [H100 results archive](experiments/adaptive-admission/kv-admission-gpu-results.tar.gz)
+Run `bash experiments/adaptive-admission/run_gpu.sh` on a compatible Linux NVIDIA GPU host with Python 3.12, Bash, and curl. The experiment directory includes the patch, workload generator, runner, simulation, and raw GPU traces with server logs. [Methodology and reproduction](experiments/adaptive-admission/README.md) · [H100 results archive](experiments/adaptive-admission/kv-admission-gpu-results.tar.gz)
 
 ## H200 prompt order
 
