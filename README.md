@@ -98,3 +98,7 @@ The runner installs vLLM, starts a loopback-only server for each cache mode, and
 - [Results, accuracy misses, and limitations](docs/results.md)
 - Raw requests and measurements with caching [off](data/results-off.jsonl) and [on](data/results-on.jsonl)
 - [Original results archive](h200-prefix-results.tar.gz) with raw measurements, both vLLM logs, and the runner log
+
+## License
+
+Foundry's original work is available under [Apache 2.0](LICENSE). The llama.cpp patch includes upstream context under the [llama.cpp MIT license](experiments/decode-aware-reload/LICENSE.llama.cpp). Upstream dependencies and downloaded model weights carry their own licenses.
