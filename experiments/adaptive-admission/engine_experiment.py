@@ -111,14 +111,17 @@ def open_request(request):
         raise RuntimeError(error.read().decode("utf-8", errors="replace")) from error
 
 
-def measure(model, mode, item):
+def measure(model, mode, item, *, cache_salt=None, logprobs=None):
     index, (phase, key, length) = item
     salt = f"admission-bench-{phase}-{key}"
     tokens = random.Random(salt).choices(range(1000, 8000), k=length)
-    payload = dict(model=model, prompt=tokens + [9000 + index], cache_salt=salt,
+    payload = dict(model=model, prompt=tokens + [9000 + index],
+                   cache_salt=salt if cache_salt is None else cache_salt,
                    temperature=0, max_tokens=1, stream=True, ignore_eos=True,
                    add_special_tokens=False, return_token_ids=True,
                    stream_options={"include_usage": True})
+    if logprobs is not None:
+        payload.update(logprobs=logprobs, return_tokens_as_token_ids=True)
     req = urllib.request.Request("http://127.0.0.1:8000/v1/completions",
                                  json.dumps(payload).encode(),
                                  {"Content-Type": "application/json"})
@@ -127,6 +130,7 @@ def measure(model, mode, item):
     usage = None
     output = []
     token_ids = []
+    top_logprobs = []
     with open_request(req) as response:
         for line in response:
             if not line.startswith(b"data:") or line[5:].strip() == b"[DONE]":
@@ -137,6 +141,7 @@ def measure(model, mode, item):
                     if first is None:
                         first = time.perf_counter()
                     token_ids.extend(choice["token_ids"])
+                    top_logprobs.extend((choice.get("logprobs") or {}).get("top_logprobs") or [])
                 output.append(choice.get("text", ""))
             usage = event.get("usage") or usage
     if first is None or usage is None or len(token_ids) != 1:
@@ -144,12 +149,18 @@ def measure(model, mode, item):
     if usage["prompt_tokens"] != length + 1:
         raise RuntimeError("Server changed the supplied token count")
     details = usage.get("prompt_tokens_details") or {}
-    return dict(mode=mode, index=index, phase=phase, salt=salt,
+    row = dict(mode=mode, index=index, phase=phase, salt=salt,
                           prompt_tokens=usage["prompt_tokens"],
                           cached_tokens=details.get("cached_tokens") or 0,
                           ttft_ms=(first - started) * 1000,
                           total_ms=(time.perf_counter() - started) * 1000,
                           output_token=token_ids[0], text="".join(output))
+    if logprobs is not None:
+        if len(top_logprobs) != 1 or not top_logprobs[0]:
+            raise RuntimeError("Expected top log probabilities for one generated token")
+        row["top_logprobs"] = top_logprobs[0]
+        row["cache_salt"] = payload["cache_salt"]
+    return row
 
 
 def run(seed, mode, model, concurrency, limit):

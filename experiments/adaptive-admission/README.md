@@ -1,5 +1,31 @@
 # Adaptive KV prefix admission
 
+## Output mismatch audit
+
+Run `python audit_outputs.py admission` and `python audit_outputs.py eviction` to check the saved output differences on CPU. The audit regenerates the workload and checks the request index, phase, salt, and prompt length against every archived row before comparing token IDs.
+
+In the concurrent eviction trace, request **858** (zero-based row 474) returned token **84** in both LRU runs with 1,024 cached tokens and token **198** in both cost-ranked runs with zero cached tokens. The two stock LRU runs disagree on five other requests. In the sequential admission trace, requests **166, 232, 628, and 760** generated different tokens when the adaptive run reused more cached tokens. The cause remains open.
+
+On a CUDA host with vLLM 0.32.0 installed in an experiment environment, run `bash run_output_audit.sh`. It starts a fresh server for each policy, workload, and concurrency, then replays the archived request sequence and probes the differing requests with fresh salts and repeats. The JSONL records actual cache hits and token-ID keyed top log probabilities. Check the cache count before treating a repeat as warm. Physical KV block IDs require allocator tracing.
+
+Use `FOCUSED=1 bash run_output_audit.sh` for cold and repeat probes of eviction request 858 and the four admission mismatches. This mode uses the original tokens but skips the historical cache population sequence.
+
+### Focused H200 replay
+
+The [run artifacts](results/h200-output-audit/) include all 60 JSONL observations, 12 server logs, installation and runner logs, and GPU metadata.
+
+The replay completed on an H200 SXM with driver 595.91.07 and vLLM 0.32.0. All 40 uncached observations matched their request's cache-disabled output. Twelve of 20 warm observations changed the greedy token, including six of ten warm stock LRU observations. All 20 warm observations reported the full reusable prefix length.
+
+| Request | Uncached token | Warm LRU at concurrency 1 / 4 | Warm policy at concurrency 1 / 4 |
+| ---: | ---: | --- | --- |
+| 166 | 71 | 71 / 71 | 71 / 220 (adaptive) |
+| 232 | 64 | 531 / 531 | 531 / 531 (adaptive) |
+| 628 | 306 | 306 / 408 | 306 / 306 (adaptive) |
+| 760 | 220 | 198 / 220 | 198 / 220 (adaptive) |
+| 858 | 198 | 84 / 84 | 84 / 84 (cost-ranked) |
+
+For request 858, the top two reported log probabilities were tied in every warm run. Its uncached winner led by 0.03125 log-probability units. Across all five requests, the gap between the top two reported values ranged from zero to 0.0625. The near ties and stock LRU flips support numerical sensitivity to cached versus uncached execution as an explanation. The isolated probes do not reproduce historical eviction pressure or establish the allocator's behavior across the original workload. In particular, request 858 was the only eviction probe, so its concurrency-four configuration did not generate a four-request batch.
+
 A prefix cache with limited space can evict useful KV state when many requests use a document only once. Waiting for a second request before admitting a prefix can protect recurring documents. It also misses the only reuse when a document appears exactly twice.
 
 ## H100 engine benchmark
