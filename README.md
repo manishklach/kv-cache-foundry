@@ -1,8 +1,39 @@
-# vLLM prefix caching on an NVIDIA H200
+# vLLM Prefix Cache Benchmark
+
+Two Runpod GPU experiments measure how prompt layout and cache admission affect vLLM prefix reuse. Both use Qwen3-4B-Instruct-2507 and vLLM 0.32.0.
+
+| Experiment | GPU | Change | Result |
+| --- | --- | --- | --- |
+| [Prompt order](#h200-prompt-order) | H200 SXM | Put the shared manual before the question and enable prefix caching | 33.3% lower median time to first token with the manual first |
+| [Adaptive cache admission](#h100-adaptive-cache-admission) | H100 SXM | Patch vLLM's KV cache manager to switch admission rules using recent missed-token counts | 8.8% fewer uncached prompt tokens and 6.2% lower median time to first token |
+
+## H100 adaptive cache admission
+
+When many prompts use a prefix only once, admitting every prefix can evict useful KV blocks. Waiting until a prefix appears twice protects recurring prefixes, but it can also miss the only opportunity for reuse in traffic where each prefix appears exactly twice.
+
+The engine change is in vLLM's KV cache manager. It gates insertion of newly computed blocks into the reusable cache. Two metadata-only shadow caches estimate how many prompt tokens would miss under first-hit and second-hit admission. Every 32 benchmark requests, the patch picks the rule with fewer missed tokens for the next window, keeping the current rule on ties. It uses only prior requests. A 4,096-token miss therefore counts eight times as much as a 512-token miss. vLLM continues to handle GPU block allocation, cache lookup, and LRU eviction.
+
+Adaptive caching and reuse-based admission have precedents. The contribution here is a reproducible vLLM patch that selects between two admission rules using token-weighted misses, together with a GPU replay that shows where it helps and where it costs more. [ARC prior work](https://www.usenix.org/conference/fast-03/arc-self-tuning-low-overhead-replacement-cache) · [vLLM prefix caching design](https://docs.vllm.ai/en/v0.32.0/design/prefix_caching/)
+
+The H100 served 1,024 sequential requests per mode, using 32-token blocks and 32,800 tokens of reported KV cache capacity in both runs. The synthetic workload alternates recurring prefixes mixed with one-off traffic and groups of prefixes that appear exactly twice. Each request generates one token.
+
+| H100 metric | Standard admission | Adaptive admission |
+| --- | ---: | ---: |
+| Uncached prompt tokens | 1,243,936 | 1,134,688 |
+| Median time to first token | 36.12 ms | 33.90 ms |
+| p95 time to first token | 76.44 ms | 76.64 ms |
+| Median time to first token in one-off traffic phases | 36.04 ms | 29.52 ms |
+| Median time to first token in paired traffic phases | 36.12 ms | 37.44 ms |
+
+The generated token matched on 1,020 of 1,024 requests. The four differences are unresolved. The run used eager execution, one synthetic trace, a fixed run order, and no request concurrency. The latency figures describe that replay. The separate 20-seed simulation found fewer recomputed tokens at 16,384 and 32,768 tokens of cache capacity and more at 65,536 tokens.
+
+Run `bash experiments/adaptive-admission/run_gpu.sh` on a compatible Linux NVIDIA GPU host with Python 3.12, Bash, and curl. The experiment directory includes the patch, workload generator, runner, simulation, and raw GPU traces with server logs. [Methodology and reproduction](experiments/adaptive-admission/README.md) · [H100 results archive](experiments/adaptive-admission/kv-admission-gpu-results.tar.gz)
+
+## H200 prompt order
 
 Putting a shared manual before the question let vLLM reuse a median of **3,888 prompt tokens** and reduced median time to first token from **72.4 ms to 48.3 ms** (33%) for that prompt layout. The manual-first layout scored **47/51** with caching both off and on. The question-first layout scored **51/51** in both modes.
 
-## Results
+### Results
 
 | Prompt layout | Prefix cache | Median TTFT | p95 TTFT | Median cached tokens | Exact match |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -15,7 +46,7 @@ TTFT measures the time from starting the local HTTP request to receiving the fir
 
 With caching on, the manual-first layout was about 34% faster at the median than question-first, with four fewer exact matches. The cache-off results show that the accuracy difference also occurred without prefix reuse. See the [results analysis](docs/results.md) for the individual misses and what the benchmark can establish.
 
-## Reproduce
+### Reproduce
 
 The recorded run used one NVIDIA H200 SXM on Runpod, Qwen3-4B-Instruct-2507, and vLLM 0.32.0. On a Linux GPU machine with a compatible NVIDIA driver, Python 3.12, Bash, and curl, run:
 
@@ -27,7 +58,7 @@ bash run_on_pod.sh
 
 The runner installs vLLM, starts a loopback-only server for each cache mode, and writes two JSONL result files plus the server logs. Follow the [reproduction guide](docs/reproduce.md) for deployment settings, output checks, and the install workaround used on Runpod.
 
-## Repository contents
+### H200 files
 
 - [Benchmark client](benchmark.py) and [GPU runner](run_on_pod.sh)
 - [Experimental design and metrics](docs/methodology.md)
