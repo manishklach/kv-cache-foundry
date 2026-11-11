@@ -1,0 +1,12 @@
+benchmark.cu(88): warning #549-D: variable "status" is used before its value is set
+      do { const cudaError_t status = (status); if (status != cudaSuccess) { std::fprintf(
+                                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+benchmark.cu(88): warning #549-D: variable "status" is used before its value is set
+      do { const cudaError_t status = (status); if (status != cudaSuccess) { std::fprintf(
+                                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+

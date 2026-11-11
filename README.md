@@ -9,6 +9,11 @@ KV Cache Foundry develops and tests KV-cache policies for LLM inference. It incl
 | [Cost-ranked block eviction](#h100-cost-ranked-block-eviction) | H100 SXM | Rank free KV blocks in C using estimated rebuild time and age | 3.0–5.0% fewer uncached tokens and 1.8–5.5% higher request throughput across two orders |
 | [Reload versus recompute](#h200-reload-versus-recompute) | H200 SXM | Select the cheaper path using prefix length and copy backlog | 19.2% lower summed time than always reloading across the held-out synthetic grid |
 | [Decode-aware KV reload](#decode-aware-kv-reload-prototype) | H200 SXM | Pace KV writes using live decode latency and allow prefix recomputation | Higher p95 first-token latency in all six settings. All 648 requests matched the reference tokens. |
+| [Deadline-aware KV prefetch](#deadline-aware-kv-prefetch) | RTX PRO 6000 Blackwell | Overlap per-layer KV copies with attention and compare FIFO against deadline ordering | Layer prefetch cut median latency by about 18% for both prefix lengths. All three policies met 27/72 targets. |
+
+## Deadline-aware KV prefetch
+
+The CUDA benchmark compares full restore, FIFO layer prefetch, and deadline ordering on the same synthetic attention workload. On the RTX PRO 6000 Blackwell, FIFO prefetch reduced median completion latency from 53.98 to 44.51 ms at 512 tokens and from 52.01 to 42.44 ms at 4,096 tokens. Deadline ordering reached 44.12 ms and 42.41 ms, respectively. All three policies met the same 27 of 72 request targets, and all 216 requests passed bitwise attention checks. The initial H200 run used a build with a CUDA error-checking bug and is recorded as preliminary. [Benchmark code, results, and reproduction](experiments/deadline-kv-prefetch/README.md)
 
 ## H200 reload versus recompute
 

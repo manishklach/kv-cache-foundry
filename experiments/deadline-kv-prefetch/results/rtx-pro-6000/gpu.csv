@@ -1,0 +1,2 @@
+name, driver_version, memory.total [MiB], pcie.link.gen.current, pcie.link.width.current
+NVIDIA RTX PRO 6000 Blackwell Server Edition, 595.91.07, 97887 MiB, 1, 16

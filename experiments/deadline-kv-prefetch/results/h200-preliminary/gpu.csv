@@ -1,0 +1,2 @@
+name, driver_version, memory.total [MiB], pcie.link.gen.current, pcie.link.width.current
+NVIDIA H200, 595.91.07, 143771 MiB, 5, 16
