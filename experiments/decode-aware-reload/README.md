@@ -28,6 +28,26 @@ This is a two-context inference experiment with a single background request in f
 
 ## Validation status
 
-A Linux CPU smoke test used the TinyLlama Stories15M Q4_0 model, a 512-token prefix, and a 1 ms target. The 3,545,264-byte KV snapshot passed the forced split-restore check. All 108 measured requests matched the eight reference tokens. The adaptive policy waited on 33 of its 36 requests and selected reload for all 36. These checks cover the restore and pacing paths. GPU performance and live selection of the recompute path remain unverified.
+A Linux CPU smoke test used the TinyLlama Stories15M Q4_0 model, a 512-token prefix, and a 1 ms target. The 3,545,264-byte KV snapshot passed the forced split-restore check. All 108 measured requests matched the eight reference tokens. The adaptive policy waited on 33 of its 36 requests and selected reload for all 36. These checks cover the restore and pacing paths. The subsequent H200 run exercised both paths. Across six settings, all 648 requests matched the eight reference tokens. Adaptive reload raised background p95 time to first token in all six settings. See the [H200 results, figure, and raw logs](h200-results.md).
 
-Model SHA-256: `66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
+CPU smoke-test model SHA-256 `66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`.
+
+## Reproduce the H200 sweep
+
+The run used CUDA 13.2 and Qwen3-4B-Instruct-2507 Q4_K_M. Run these commands from this directory on the GPU host.
+
+```bash
+model=Qwen3-4B-Instruct-2507-Q4_K_M.gguf
+curl -fL --retry 2 "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/$model" -o "$model"
+printf '3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597  %s\n' "$model" | sha256sum -c
+mkdir -p results
+CUDA_ARCHITECTURES=90 JOBS=12 bash build.sh >results/build.log 2>&1
+nvidia-smi --query-gpu=name,driver_version,memory.total,pcie.link.gen.current,pcie.link.width.current --format=csv >results/gpu.csv
+sha256sum "$model" >results/model.sha256
+for setting in 128:2 512:2 2048:2 4096:2 2048:4 4096:4; do
+    prefix=${setting%:*}
+    target=${setting#*:}
+    output="results/$prefix-${target}ms"
+    build/cuda/decode_aware_reload "$model" "$prefix" "$target" 999 >"$output.csv" 2>"$output.log" || exit 1
+done
+```
