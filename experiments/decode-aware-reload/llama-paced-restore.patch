@@ -1,0 +1,128 @@
+diff --git a/include/llama.h b/include/llama.h
+index 428f51f..b11335e 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -899,6 +899,14 @@ extern "C" {
+     // Returns:
+     //  - Positive: Ok
+     //  - Zero: Failed to load
++    // Host sequence restore with a byte budget per synchronous tensor-write batch.
++    // The callback runs on the restore thread, before each batch. A zero budget
++    // is clamped to one byte. It must not call back into this context.
++    typedef size_t (*llama_kv_reload_budget_fn)(void * user_data);
++    LLAMA_API size_t llama_state_seq_set_data_paced(
++            struct llama_context * ctx, const uint8_t * src, size_t size,
++            llama_seq_id seq_id, llama_kv_reload_budget_fn budget, void * user_data);
++
+     LLAMA_API size_t llama_state_seq_set_data(
+             struct llama_context * ctx,
+                    const uint8_t * src,
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 394e39d..85511e5 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -3380,7 +3380,9 @@ private:
+ 
+ class llama_io_read_host : public llama_io_read_i {
+ public:
+-    llama_io_read_host(const uint8_t * p, size_t len) : ptr(p), base_ptr(p), buf_size(len) {}
++    llama_io_read_host(const uint8_t * p, size_t len,
++            llama_kv_reload_budget_fn budget = nullptr, void * user_data = nullptr)
++        : ptr(p), base_ptr(p), buf_size(len), budget(budget), user_data(user_data) {}
+ 
+     ~llama_io_read_host() {
+         if (rinfos.empty()) {
+@@ -3396,14 +3398,32 @@ public:
+         sizes.reserve(rinfos.size());
+         data_offsets.reserve(rinfos.size());
+ 
++        auto flush = [&]() {
++            ggml_backend_tensor_set_n(tensors.data(), base_ptr, offsets.data(), sizes.data(), data_offsets.data(), tensors.size());
++            tensors.clear();
++            offsets.clear();
++            sizes.clear();
++            data_offsets.clear();
++        };
++
++        size_t remaining = budget ? 0 : SIZE_MAX;
+         for (const auto & rinfo : rinfos) {
+-            tensors.push_back(rinfo.tensor);
+-            offsets.push_back(rinfo.offset);
+-            sizes.push_back(rinfo.size);
+-            data_offsets.push_back(rinfo.data_offset);
++            size_t copied = 0;
++            while (copied < rinfo.size) {
++                if (budget && remaining == 0) {
++                    flush();
++                    remaining = std::max(size_t(1), budget(user_data));
++                }
++                const size_t chunk = std::min(rinfo.size - copied, remaining);
++                tensors.push_back(rinfo.tensor);
++                offsets.push_back(rinfo.offset + copied);
++                sizes.push_back(chunk);
++                data_offsets.push_back(rinfo.data_offset + copied);
++                copied += chunk;
++                remaining -= chunk;
++            }
+         }
+-
+-        ggml_backend_tensor_set_n(tensors.data(), base_ptr, offsets.data(), sizes.data(), data_offsets.data(), rinfos.size());
++        flush();
+     }
+ 
+     void read(void * dst, size_t size) override {
+@@ -3443,6 +3463,8 @@ private:
+     size_t buf_size = 0;
+     size_t size_read = 0;
+ 
++    llama_kv_reload_budget_fn budget;
++    void * user_data;
+     struct read_info {
+         ggml_tensor * tensor;
+         size_t data_offset;
+@@ -3884,7 +3906,8 @@ size_t llama_context::state_seq_get_data(llama_seq_id seq_id, uint8_t * dst, siz
+     }
+ }
+ 
+-size_t llama_context::state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags) {
++size_t llama_context::state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags,
++        llama_kv_reload_budget_fn budget, void * user_data) {
+     std::unique_ptr<llama_io_read_i> io;
+     if (flags & LLAMA_STATE_SEQ_FLAGS_ON_DEVICE) {
+         // create a temporary io to read the magic and the src seq_id
+@@ -3903,7 +3926,7 @@ size_t llama_context::state_seq_set_data(llama_seq_id seq_id, const uint8_t * sr
+ 
+         io = std::make_unique<llama_io_read_device>(src, size, mem_storage[seq_id_read]);
+     } else {
+-        io = std::make_unique<llama_io_read_host>(src, size);
++        io = std::make_unique<llama_io_read_host>(src, size, budget, user_data);
+     }
+ 
+     try {
+@@ -5052,6 +5075,12 @@ size_t llama_state_seq_set_data_ext(llama_context * ctx, const uint8_t * src, si
+     return ctx->state_seq_set_data(seq_id, src, size, flags);
+ }
+ 
++size_t llama_state_seq_set_data_paced(llama_context * ctx, const uint8_t * src, size_t size,
++        llama_seq_id seq_id, llama_kv_reload_budget_fn budget, void * user_data) {
++    ctx->synchronize();
++    return ctx->state_seq_set_data(seq_id, src, size, 0, budget, user_data);
++}
++
+ size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, llama_seq_id seq_id, const llama_token * tokens, size_t n_token_count) {
+     ctx->synchronize();
+ 
+diff --git a/src/llama-context.h b/src/llama-context.h
+index ee9c837..c71a874 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -179,7 +179,8 @@ struct llama_context {
+     size_t state_seq_get_size(llama_seq_id seq_id, llama_state_seq_flags flags);
+ 
+     size_t state_seq_get_data(llama_seq_id seq_id,       uint8_t * dst, size_t size, llama_state_seq_flags flags);
+-    size_t state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags);
++    size_t state_seq_set_data(llama_seq_id seq_id, const uint8_t * src, size_t size, llama_state_seq_flags flags,
++            llama_kv_reload_budget_fn budget = nullptr, void * user_data = nullptr);
+ 
+     bool state_load_file(
+             const char * filepath,

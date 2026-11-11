@@ -1,12 +1,22 @@
-# vLLM Prefix Cache Benchmark
+# KV Cache Foundry
 
-Three Runpod GPU experiments measure how prompt layout, cache admission, and block eviction affect vLLM prefix reuse. Both use Qwen3-4B-Instruct-2507 and vLLM 0.32.0.
+KV Cache Foundry develops and tests KV-cache policies for LLM inference. It includes live vLLM allocator changes, C experiments on Runpod H100 and H200 GPUs, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
 
-| Experiment | GPU | Change | Result |
+| Experiment | Validation | Change | Result |
 | --- | --- | --- | --- |
 | [Prompt order](#h200-prompt-order) | H200 SXM | Put the shared manual before the question and enable prefix caching | 33.3% lower median time to first token with the manual first |
 | [Adaptive cache admission](#h100-adaptive-cache-admission) | H100 SXM | Patch vLLM's KV cache manager to switch admission rules using recent missed-token counts | 8.8% fewer uncached prompt tokens and 6.2% lower median time to first token |
 | [Cost-ranked block eviction](#h100-cost-ranked-block-eviction) | H100 SXM | Rank free KV blocks in C using estimated rebuild time and age | 3.0–5.0% fewer uncached tokens and 1.8–5.5% higher request throughput across two orders |
+| [Reload versus recompute](#h200-reload-versus-recompute) | H200 SXM | Select the cheaper path using prefix length and copy backlog | 19.2% lower summed time than always reloading across the held-out synthetic grid |
+| [Decode-aware KV reload](#decode-aware-kv-reload-prototype) | CPU smoke test | Pace actual KV writes using live decode latency and allow prefix recomputation | 108/108 requests matched the eight reference tokens |
+
+## H200 reload versus recompute
+
+Restoring a short prefix from host memory can cost more than rebuilding it when the GPU copy queue is busy. The C benchmark injected a serial host-to-device copy backlog. Recompute first won at 1 GiB for 128 tokens and at 2 GiB for 512 tokens. Reload still won at the largest tested backlog, 4 GiB, for 2,048 and 4,096 tokens. On 224 held-out pairs, a calibrated selector reduced summed time from 6,005.96 ms to 4,850.48 ms. The benchmark isolates the two paths and assumes prefill can proceed independently of the copy backlog. [Methodology, raw results, and reproduction](experiments/reload-vs-recompute/README.md)
+
+## Decode-aware KV reload prototype
+
+A C controller and C++ llama.cpp patch pace actual host-to-device KV restore batches using the latency of a concurrent decoder. The runner also chooses when to rebuild the cached prefix. It compares stock restore, a fixed batch size, and the adaptive policy with a generated-token check. All 108 CPU smoke-test requests matched the eight reference tokens. The adaptive mode exercised pacing and chose reload on all 36 requests. GPU latency and live selection of recompute remain unverified. [Implementation and reproduction](experiments/decode-aware-reload/README.md)
 
 ## H100 cost-ranked block eviction
 
