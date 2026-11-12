@@ -2,6 +2,10 @@
 
 KV Cache Foundry develops and tests KV-cache policies for LLM inference. It includes live vLLM allocator changes, C experiments on Runpod H100 and H200 GPUs, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
 
+## Unified cost model prototype
+
+The first CPU-only piece of the proposed unified decision engine is now in [`foundry/`](foundry/README.md). The C11 model provides per-GPU, per-prefix EWMA estimates for reload, recompute, and keep costs, with an explicit prior and nearest-prefix fallback. It is a prototype, not yet calibrated from live GPU measurements, and it does not yet implement cache policies. New core decision code remains in C. The current 327 anomaly has been grounded against the archived traces and has a corrected, staged probe plan in [`docs/327-probe-plan.md`](docs/327-probe-plan.md). A live GPU run is deferred: the Runpod account had $0.38 credit at the latest check, insufficient for a useful, bounded session including model startup.
+
 | Experiment | Validation | Change | Result |
 | --- | --- | --- | --- |
 | [Prompt order](#h200-prompt-order) | H200 SXM | Put the shared manual before the question and enable prefix caching | 33.3% lower median time to first token with the manual first |
