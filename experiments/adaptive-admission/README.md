@@ -14,7 +14,7 @@ Use `FOCUSED=1 bash run_output_audit.sh` for cold and repeat probes of eviction 
 
 The [run artifacts](results/h200-output-audit/) include all 60 JSONL observations, 12 server logs, installation and runner logs, and GPU metadata.
 
-The replay completed on an H200 SXM with driver 595.91.07 and vLLM 0.32.0. All 40 uncached observations matched their request's cache-disabled output. Twelve of 20 warm observations changed the greedy token, including six of ten warm stock LRU observations. All 20 warm observations reported the full reusable prefix length.
+The replay completed on one Runpod H200 SXM with driver 595.91.07 and vLLM 0.32.0. Its saved `nvidia-smi` capture reports 143,771 MiB; PCIe link state was not captured for this run. All 40 uncached observations matched their request's cache-disabled output. Twelve of 20 warm observations changed the greedy token, including six of ten warm stock LRU observations. All 20 warm observations reported the full reusable prefix length. See the [hardware inventory](../../docs/hardware-inventory.md) for metadata limits across runs.
 
 | Request | Uncached token | Warm LRU at concurrency 1 / 4 | Warm policy at concurrency 1 / 4 |
 | ---: | ---: | --- | --- |
@@ -34,7 +34,7 @@ A prefix cache with limited space can evict useful KV state when many requests u
 
 The [live allocator patch](live_eviction.py) ranks free blocks with [C code](block_rank.c) when an allocation would reuse cached blocks. Uncached blocks come first. Cached blocks are ranked by age plus estimated rebuild time per token. Queue order breaks ties. vLLM retains responsibility for reference counts and cache hash eviction. This is a block-level adaptation of the whole-prefix replay below.
 
-On one Runpod H100 SXM, each policy served 512 requests per trial at concurrency four. Both orders used the same trace, vLLM 0.32.0, Qwen3-4B-Instruct-2507, eager execution, and 32,800 tokens of reported KV cache capacity.
+On one Runpod H100 SXM, each policy served 512 requests per trial at concurrency four. Both orders used the same trace, vLLM 0.32.0, Qwen3-4B-Instruct-2507, eager execution, and 32,800 tokens of reported KV cache capacity. The saved vLLM logs report 79.18 GiB total device memory. The result archive does not contain the original `nvidia-smi` capture, driver version, or CUDA runtime/toolkit version; see the [hardware inventory](../../docs/hardware-inventory.md).
 
 | Run order | Policy | Uncached tokens | Median TTFT | p95 TTFT | Requests/s |
 | --- | --- | ---: | ---: | ---: | ---: |

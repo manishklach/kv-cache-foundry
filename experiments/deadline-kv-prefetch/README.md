@@ -24,7 +24,7 @@ The workload isolates the scheduling rule using synthetic KV and an attention-on
 
 ## RTX PRO 6000 Blackwell results
 
-The corrected benchmark compiled with CUDA 13.2.86 and warnings treated as errors. It ran on one NVIDIA RTX PRO 6000 Blackwell Server Edition with driver 595.91.07. All 216 measured requests passed the bitwise attention checks.
+The corrected benchmark compiled with CUDA 13.2.86 and warnings treated as errors. It ran on one NVIDIA RTX PRO 6000 Blackwell Server Edition with driver 595.91.07. Its `nvidia-smi` capture reports 97,887 MiB and PCIe Gen 1 x16 at capture time. All 216 measured requests passed the bitwise attention checks. See the [hardware inventory](../../docs/hardware-inventory.md) for this device record and the preliminary H200 run.
 
 | Policy | 512-token median (ms) | 4,096-token median (ms) | Foreground p95 (ms) | Requests within target |
 | --- | ---: | ---: | ---: | ---: |

@@ -1,0 +1,24 @@
+# Benchmark hardware inventory
+
+This inventory records the accelerator and host details preserved with each GPU experiment. It distinguishes raw device captures (`nvidia-smi` CSV or engine startup logs) from the GPU class named in an experiment README. Missing fields are marked as not preserved; they are not inferred from a product name or from a different run.
+
+## GPU experiments
+
+| Experiment | GPU used | Memory and device details in saved artifacts | Driver / CUDA | Record quality |
+| --- | --- | --- | --- | --- |
+| Prompt-order prefix-cache benchmark | One Runpod NVIDIA H200 SXM | NVIDIA-SMI memory total: 143,771 MiB | Driver 595.91.07; Runpod image `runpod/pytorch:2.1.0-cu1320-torch280-ubuntu2404` | Hardware and driver are recorded in [`docs/reproduce.md`](reproduce.md); the archived result bundle does not include a standalone `gpu.csv`. PCIe state, host CPU/RAM, data center, and Pod ID were not preserved. |
+| Adaptive admission (sequential) | One Runpod H100 SXM | vLLM startup logs report 79.18 GiB total device memory and 78.67 GiB free at engine startup | Driver version and CUDA runtime/toolkit version were not preserved in the result archive | The experiment README names the H100 SXM; the raw archive contains vLLM logs but no `gpu.csv`/`nvidia-smi` capture. Do not treat the vLLM memory line as a complete device inventory. |
+| Cost-ranked eviction (concurrent) | One Runpod H100 SXM | vLLM startup logs report 79.18 GiB total device memory; free memory varied with startup | Driver version and CUDA runtime/toolkit version were not preserved in the result archive | The README names the H100 SXM; the raw archive contains six vLLM logs but no standalone GPU metadata capture. |
+| Reload versus recompute | One Runpod NVIDIA H200 SXM | Exact memory total and PCIe link state were not retained alongside the CSV measurements | Driver and CUDA version were not retained in the experiment artifacts | The contemporaneous experiment README identifies the H200 SXM; `run_reload_c.sh` prints `nvidia-smi` when rerun, but the historical command output is not in the repository. |
+| Decode-aware KV reload | One NVIDIA H200 SXM | `nvidia-smi`: 143,771 MiB; sampled link state: PCIe Gen 5 x16. llama.cpp startup reports compute capability 9.0 and 143,157 MiB VRAM | Driver 595.91.07; result note identifies CUDA 13.2.86 | Raw [`gpu.csv`](../experiments/decode-aware-reload/h200-decode-results/gpu.csv), build log, result note, and per-setting engine logs are committed. The CUDA compiler version is stated in the result note rather than a saved `nvcc --version` output. PCIe generation is the current link state at capture, not a claim about negotiated link state throughout the benchmark. |
+| Focused output-mismatch replay | One NVIDIA H200 (Runpod selection: H200 SXM) | `nvidia-smi`: 143,771 MiB | Driver 595.91.07; CUDA runtime/toolkit version was not separately captured in this result set | Raw [`gpu.csv`](../experiments/adaptive-admission/results/h200-output-audit/gpu.csv) and vLLM logs are committed. PCIe link state was not queried in this capture. |
+| Deadline-aware prefetch, initial run | One NVIDIA H200 | `nvidia-smi`: 143,771 MiB; sampled link state: PCIe Gen 5 x16 | Driver 595.91.07; CUDA compiler 13.2.86 | Raw hardware and [`toolkit.log`](../experiments/deadline-kv-prefetch/results/h200-preliminary/toolkit.log) captures are committed. This is the preliminary run: its CUDA error-checking bug is documented and its measurements are not the corrected headline result. |
+| Deadline-aware prefetch, corrected run | One NVIDIA RTX PRO 6000 Blackwell Server Edition | `nvidia-smi`: 97,887 MiB; sampled link state: PCIe Gen 1 x16 | Driver 595.91.07; CUDA compiler 13.2.86 | Raw [`gpu.csv`](../experiments/deadline-kv-prefetch/results/rtx-pro-6000/gpu.csv) and [`toolkit.log`](../experiments/deadline-kv-prefetch/results/rtx-pro-6000/toolkit.log) are committed. The Gen 1 x16 value is the link state reported at capture time; it is not a maximum-capability claim. |
+
+## CPU-only work
+
+The synthetic trace replays and the current Foundry cost-model unit test do not use a GPU. The cost-model C unit test was compiled on Windows x64 with Visual Studio Build Tools 2022 Developer Command Prompt 17.14.34. That local compiler record describes only the prototype unit test, not a GPU inference benchmark.
+
+## What was not recorded consistently
+
+Historical result archives do not consistently contain the Runpod Pod ID, data center, host CPU model, host RAM, full `nvidia-smi -q` output, or GPU UUID. H100 experiment archives in particular omit the original `nvidia-smi` output. Those details cannot be recovered from the committed benchmark numbers alone. Future GPU runs should save the GPU name, UUID, memory total, driver, CUDA runtime/toolkit, PCIe link state, CPU model, host RAM, and Pod class in a metadata file beside the results.

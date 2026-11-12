@@ -34,7 +34,7 @@ CPU smoke-test model SHA-256 `66967fbece6dbe97886593fdbb73589584927e29119ec31f08
 
 ## Reproduce the H200 sweep
 
-The run used CUDA 13.2 and Qwen3-4B-Instruct-2507 Q4_K_M. Run these commands from this directory on the GPU host.
+The run used one NVIDIA H200 SXM and Qwen3-4B-Instruct-2507 Q4_K_M. The committed device capture reports driver 595.91.07, 143,771 MiB, and PCIe Gen 5 x16 at capture; CUDA toolkit 13.2.86 is recorded in the toolkit log. llama.cpp reports compute capability 9.0 and 143,157 MiB VRAM at startup. Run these commands from this directory on the GPU host. See the [hardware inventory](../../docs/hardware-inventory.md) for the distinction between device capture and runtime-reported memory.
 
 ```bash
 model=Qwen3-4B-Instruct-2507-Q4_K_M.gguf

@@ -1,6 +1,6 @@
 # KV reload versus recompute on H200
 
-The C benchmark uses the llama.cpp b12250 C API with Qwen3-4B-Instruct-2507 Q4_K_M on one Runpod NVIDIA H200 SXM. It compares restoring a sequence's serialized KV from pinned host memory with prefilling the same token IDs from scratch. The restore path includes a controlled backlog modeled by serial host-to-device copies. The recompute path runs without that backlog, so the benchmark assumes prefill can proceed without waiting for the copy queue.
+The C benchmark uses the llama.cpp b12250 C API with Qwen3-4B-Instruct-2507 Q4_K_M on one Runpod NVIDIA H200 SXM. It compares restoring a sequence's serialized KV from pinned host memory with prefilling the same token IDs from scratch. The restore path includes a controlled backlog modeled by serial host-to-device copies. The recompute path runs without that backlog, so the benchmark assumes prefill can proceed without waiting for the copy queue. The historical CSVs do not include the original `nvidia-smi` output, driver version, memory total, or CUDA version; the H200 SXM class is the hardware detail recorded in the experiment notes. See the [hardware inventory](../../docs/hardware-inventory.md).
 
 Run `bash run_reload_c.sh` on a compatible Linux CUDA host with a C compiler, Bash, curl, and tar. The runner downloads pinned llama.cpp binaries and model weights and builds [the C benchmark](reload_vs_recompute.c).
 
