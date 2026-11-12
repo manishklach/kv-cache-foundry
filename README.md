@@ -35,6 +35,12 @@ A C controller and C++ llama.cpp patch pace actual host-to-device KV restore bat
 
 The focused audit revisited five requests from the H100 admission and eviction traces on one H200 with vLLM 0.32.0. All 40 uncached observations matched the cache-disabled output. Twelve of 20 full-prefix hits changed the greedy token, including six under stock LRU. Request 858 returned token 198 on misses and token 84 on hits under both LRU and cost-ranked eviction. The top two reported log probabilities tied in each warm run. The results support sensitivity to near-tied scores when reusing cached KV. The isolated probes leave behavior under the original eviction pressure open. [Results and reproduction](experiments/adaptive-admission/README.md#focused-h200-replay) · [Raw observations and logs](experiments/adaptive-admission/results/h200-output-audit/)
 
+## L4 probe of request 327
+
+The first focused L4 probe replayed the exact token-ID prompt for request 327 from the concurrent eviction trace. Six isolated calls (two cold cache salts and four repeats) all selected token ID 220. In all six, token IDs 220 and 287 had identical top log probabilities (`-5.622137`), supporting a near-tie as a plausible explanation for the historical output variation. No token flip occurred in this L4 run. The response usage did not expose per-request cached-token counts; the vLLM aggregate prefix-cache hit rate was 66.7% after the six calls.
+
+This is a diagnostic lead, not a reproduction of the H100 anomaly: the run used an L4 and vLLM 0.33.0, while the historical eviction trials used H100 and vLLM 0.32.0. See [the focused results and exact hardware record](experiments/adaptive-admission/results/l4-probe-327/README.md) and [the staged probe plan](docs/327-probe-plan.md).
+
 ## H100 cost-ranked block eviction
 
 A live vLLM block allocator patch calls a C ranking function when a new allocation would reuse cached blocks. It ranks uncached blocks first, then ranks cached blocks by age plus estimated rebuild time per token. Rebuild costs come from cold versus full-hit latency measurements on the earlier H100 run. The policy applies [GreedyDual-Size](https://www.usenix.org/legacy/publications/library/proceedings/usits97/full_papers/cao/cao_html/cao.html) to individual KV blocks.

@@ -24,8 +24,18 @@ Rotate policy order across fresh server processes. Record prompt/tokenizer ident
 
 Use a prewritten stopping rule: if repeated isolated probes never flip, move to controlled concurrent pairs; if the gap is consistently large and tokens still differ, investigate prompt equality and engine/kernel state before attributing the result to ties; use allocator tracing only if those checks leave allocator state as the remaining explanation.
 
+## L4 first-stage result (November 12, 2026)
+
+The first bounded GPU stage ran the exact request-327 token-ID prompt on one Runpod L4 with Qwen3-4B-Instruct-2507 and vLLM 0.33.0. It made six sequential calls: two distinct cache salts, each called once cold and twice again. All six generated token ID 220. The top two reported candidates, 220 and 287, had the same log probability (`-5.6221370697`) in every observation; the full top-20 ordering and values were identical across all six observations. The server's aggregate prefix-cache hit rate reached 66.7%; its response usage did not report a per-request cached-token count.
+
+This supports the near-tie hypothesis as a plausible numerical sensitivity, but the run did not produce a flip and cannot explain the historical H100 result by itself. It also differs in GPU and vLLM version (L4 / v0.33.0 here versus H100 / v0.32.0 in the archived eviction trace). It was sequential and did not instrument scheduler batch membership. Raw JSONL and the hardware/runtime record are in [`results/l4-probe-327/`](../experiments/adaptive-admission/results/l4-probe-327/).
+
+The Pod ran for about 3 minutes 48 seconds. Runpod showed $0.69/hour compute and $0.004/hour for its 30 GB temporary container disk (roughly $0.044 at the recorded uptime); it was stopped immediately after collecting the probe. No GPU billing is currently accruing.
+
 ## Runpod funding gate
 
-The Runpod Billing page was read on 2026-11-12: credit balance **$0.38**, spend rate **$0.00/hr**, and current GPU, vCPU, storage, and endpoint resource counts all **0**. The currently listed GPU rates include RTX A6000 at $0.59/hr, H100 SXM at $3.99/hr, and H200 SXM at $5.29/hr. The available credit is less than one hour on the least expensive listed GPU, and does not leave a safe budget for Pod startup, model availability/download, and a useful probe. No Pod was created. Do not let an experiment charge beyond the available credit without the user setting a new spend cap.
+Before the run, the Runpod Billing page showed credit balance **$0.38** and spend rate **$0.00/hr**. The account had no other active GPU, CPU, storage, or endpoint resources. The targeted L4 probe completed within a few minutes; its Pod is stopped and shows $0.00/hr. A larger H100 reproduction with concurrency, request-order rotation, and pinned vLLM 0.32.0 remains a separate experiment and should be attempted only after checking the current balance and available GPU stock.
 
-When credit is sufficient, prefer a short, targeted H100 run if the goal is to reproduce the original H100 anomaly. Runpod availability and price must be checked again at that time. Do not run the proposed multi-hour rotation/repeat plan as the first GPU stage.
+## Next GPU step
+
+The next informative run is a short H100 reproduction with pinned vLLM 0.32.0: repeat the exact prompt at concurrency one, then submit a controlled request pair together and collect top-20 logits plus actual cache-hit counts. That directly tests whether the L4 tie carries over to the original H100 runtime and whether a concurrent pair can change the selected token. Check the current balance and stock immediately before deployment; keep the run under an explicit spend/time cap. The broader multi-hour rotation plan remains deferred.

@@ -1,0 +1,48 @@
+{
+  "experiment": "request-327-isolated-near-tie-probe",
+  "date": "2026-11-12",
+  "gpu": {
+    "provider": "Runpod",
+    "class": "NVIDIA L4",
+    "product_vram_gb": 24,
+    "telemetry_total_vram_gib": 22,
+    "telemetry_allocated_vram_gib_after_probe": 17,
+    "telemetry_utilization_percent_after_probe": 0,
+    "telemetry_temperature_c_after_probe": 50,
+    "telemetry_power_w_after_probe": 36,
+    "power_limit_w": 72,
+    "performance_state": "P0"
+  },
+  "host": {
+    "allocated_vcpu": 6,
+    "cpu_model": "AMD EPYC 9254 24-Core Processor",
+    "host_memory_gb": 62,
+    "temporary_container_disk_gb": 30,
+    "region_and_cloud": "EU-RO-1 Secure Cloud"
+  },
+  "software": {
+    "container_image": "vllm/vllm-openai:latest",
+    "vllm_version_from_startup_log": "0.33.0",
+    "model": "Qwen/Qwen3-4B-Instruct-2507",
+    "dtype": "bfloat16",
+    "max_model_len": 4608,
+    "enforce_eager": true,
+    "gpu_memory_utilization": 0.8,
+    "driver_version": "595.91.07",
+    "cuda_version_from_runpod_telemetry": "13.2"
+  },
+  "billing": {
+    "compute_usd_per_hour": 0.69,
+    "temporary_container_storage_usd_per_hour": 0.004,
+    "displayed_total_usd_per_hour": 0.69,
+    "observed_uptime": "about 3m 48s",
+    "estimated_cost_usd_before_billing_rounding": 0.044,
+    "state_after_probe": "stopped",
+    "current_hourly_rate_after_stop_usd": 0.0
+  },
+  "metadata_limits": [
+    "No nvidia-smi capture was saved.",
+    "GPU UUID and PCIe link state were not captured.",
+    "Telemetry utilization, temperature, power, and VRAM are point-in-time readings after the six requests, not averages over the run."
+  ]
+}
