@@ -14,6 +14,19 @@ The first 20-seed run **failed** the 5% pre-GPU gate: slack-priced admission had
 
 The fixed 128-key estimator table is a prototype bound, not a production sizing claim. The nearest-prefix fallback is a guess and must remain visible to callers. No policy is integrated into vLLM.
 
+## Real-GPU prefix-cache calibration
+
+[`gpu_calibrate.c`](gpu_calibrate.c) is a C11 streaming client for measuring cold requests and exact-prefix hits against a vLLM OpenAI-compatible endpoint. The November 15, 2026 calibration ran on a Runpod H100 SXM with vLLM 0.32.0 and Qwen3-4B-Instruct-2507. It verified full cache hits at 512, 1,024, 2,048, and 4,096 prefix tokens. With two observations per condition, client-observed TTFT was noisy and warm requests were slower at 512 and 4,096 tokens. This validates that the cache path and client work; it does not show a speedup or evaluate the cost-model policy. See the [hardware record and analysis](results/h100-sxm-prefix-calibration.md) and [raw CSV](results/h100_sxm_prefix_calibration.csv).
+
+Compile with a C11 compiler and run against a secured vLLM endpoint:
+
+```sh
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic foundry/gpu_calibrate.c -o gpu_calibrate
+./gpu_calibrate https://HOST-8000.proxy.runpod.net MODEL API_KEY 2
+```
+
+Do not commit API keys or include them in benchmark logs.
+
 ## Build and run the C unit test and synthetic replay
 
 With a C11 compiler:
