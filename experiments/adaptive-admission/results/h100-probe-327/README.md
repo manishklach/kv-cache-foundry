@@ -21,6 +21,14 @@ We then submitted request 327 together with adjacent trace request 326 in six tw
 
 The measured median whole-response client time was about 1,120 ms for request 327 and 1,448 ms for request 326 in the paired calls. The client used non-streaming responses, so these are not TTFT values. They include proxy and client overhead, have only six samples, and are not evidence of an optimization or a performance comparison.
 
+```mermaid
+flowchart LR
+    A["Cold 327<br/>4,097 prompt tokens<br/>cache hit: 0<br/>output: 220"] --> B["335 control<br/>same 4,096-token prefix<br/>cache hit: 4,096<br/>output: 8"]
+    A --> C["Six concurrent pairs<br/>327 + neighbor 326<br/>separate cache salts"]
+    C --> D["327: token 220 in 6/6<br/>top scores 220 = 287"]
+    C --> E["326: token 220 in 6/6"]
+```
+
 ## Interpretation and limits
 
 The near-tie carries over from the L4/vLLM 0.33.0 probe to an H100 with the historical vLLM 0.32.0 runtime. That makes score sensitivity a plausible contributor to the archived output difference. This probe did **not** reproduce token 287 and does not establish that batching caused it. It did not recreate the preceding cache and allocator history from the full trace, measure the historical scheduler batch, or rotate fresh server processes. No inference algorithm was changed and no speedup is claimed.

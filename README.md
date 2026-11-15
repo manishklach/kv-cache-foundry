@@ -45,6 +45,16 @@ This is a diagnostic lead, not a reproduction of the H100 anomaly: the run used 
 
 The November 15 follow-up used one Runpod H100 SXM with vLLM 0.32.0 and the exact seed-0 request-327 token prompt. The cold request returned token 220 with zero cached tokens; its top two candidates, 220 and 287, were tied at `-5.616711`. The same-prefix request-335 control returned token 8 with 4,096 cached tokens. In six controlled concurrent pairs with trace neighbor 326, request 327 returned token 220 every time, again with a top-two tie. The run therefore confirms the near-tie on the historical H100 runtime but does not reproduce the one historical token-287 result or identify its exact batch cause. It changes no inference algorithm and makes no speedup claim. See [the full method, raw observations, logs, and hardware record](experiments/adaptive-admission/results/h100-probe-327/README.md).
 
+Hardware record: H100 SXM 80GB HBM3 in US-NE-1 Secure Cloud; Intel Xeon Platinum 8470 host, 26 vCPU, 251 GB RAM; driver 595.91.07; CUDA 13.2; Qwen3-4B-Instruct-2507; `vllm/vllm-openai:v0.32.0`. The Pod ran 11m19s and was stopped; estimated cost from displayed rates was $0.83. Full telemetry and the estimate method are in the [probe metadata](experiments/adaptive-admission/results/h100-probe-327/metadata.json) and [hardware inventory](docs/hardware-inventory.md).
+
+The diagram and result README show the cold request, verified warm control, and six concurrent-pair checks. The raw JSONL, server log, and Runpod/vLLM metadata provide the evidence record.
+
+## Next optimization plan: deadline-coupled KV value controller
+
+The next experiment should join the repo's separate admission, eviction, restore/recompute, and prefetch work in one C decision core. Score each action with measured critical-path milliseconds, GPU-memory opportunity cost, and the request's remaining SLO slack. The exploratory idea is **slack-priced residency**: value cached blocks by how much latency slack their next reuse can recover, and charge prefetch for queue delay and decode interference.
+
+This is a systems hypothesis, not a uniqueness claim. Agent-aware eviction/prefetch and non-prefix RAG chunk reuse already have active prior art. The plan starts with a C-only trace replay, preserves request history, and sets a 5% improvement gate before any further Runpod spend. See the [staged plan, prior-art map, measurement gates, and kill criteria](docs/next-optimization-plan.md).
+
 ## H100 cost-ranked block eviction
 
 A live vLLM block allocator patch calls a C ranking function when a new allocation would reuse cached blocks. It ranks uncached blocks first, then ranks cached blocks by age plus estimated rebuild time per token. Rebuild costs come from cold versus full-hit latency measurements on the earlier H100 run. The policy applies [GreedyDual-Size](https://www.usenix.org/legacy/publications/library/proceedings/usits97/full_papers/cao/cao_html/cao.html) to individual KV blocks.

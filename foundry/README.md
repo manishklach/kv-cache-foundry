@@ -35,4 +35,4 @@ The test covers invalid decay, caller-supplied prior fallback, exact lookup, EWM
 3. Add C replay tests against the existing archived traces, keeping the old experiment harness runnable.
 4. Only then build a C policy consumer and an ablation runner.
 
-The request-327 probe design and its current funding constraint are recorded in [`docs/327-probe-plan.md`](../docs/327-probe-plan.md).
+The request-327 probes and remaining evidence gaps are recorded in [`docs/327-probe-plan.md`](../docs/327-probe-plan.md). The proposed next work is a deadline-coupled C controller with a CPU replay gate before any additional GPU spend; see [`docs/next-optimization-plan.md`](../docs/next-optimization-plan.md).
