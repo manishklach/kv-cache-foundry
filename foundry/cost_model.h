@@ -34,6 +34,28 @@ typedef struct {
     FoundryCostEstimate prior;
 } FoundryCostModel;
 
+typedef enum {
+    FOUNDRY_ACTION_LOCAL_HIT = 0,
+    FOUNDRY_ACTION_RESTORE = 1,
+    FOUNDRY_ACTION_RECOMPUTE = 2
+} FoundryAction;
+
+typedef struct {
+    double restore_queue_ms;
+    double recompute_queue_ms;
+    double remaining_slack_ms;
+    double lateness_penalty_per_ms;
+    uint64_t minimum_samples;
+} FoundryActionContext;
+
+typedef struct {
+    FoundryAction action;
+    double predicted_finish_ms;
+    double objective_ms;
+    int used_fallback;
+    int conservative_fallback;
+} FoundryActionDecision;
+
 /* decay is the previous-value weight; for example 0.95 gives new data 5%. */
 int foundry_cost_model_init(FoundryCostModel *model, double decay,
                             const FoundryCostEstimate *prior);
@@ -50,5 +72,12 @@ int foundry_cost_model_estimate(const FoundryCostModel *model,
                                 const FoundryCostKey *key,
                                 FoundryCostEstimate *out,
                                 int *used_fallback);
+
+/* Select the cheaper measured path plus queue delay and deadline penalty.
+ * If evidence is missing/fallback/too sparse, choose conservative recompute. */
+int foundry_choose_reload_or_recompute(const FoundryCostModel *model,
+                                       const FoundryCostKey *key,
+                                       const FoundryActionContext *context,
+                                       FoundryActionDecision *out);
 
 #endif

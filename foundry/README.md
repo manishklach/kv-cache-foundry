@@ -6,9 +6,15 @@ This directory starts the unified cost model proposed in the repository review. 
 
 `cost_model.c` stores estimates keyed by GPU name and prefix length. It updates reload, recompute, and keep costs with an exponentially weighted moving average (EWMA). A query uses an exact GPU/prefix entry, then the nearest measured prefix on the same GPU, then a caller-supplied prior. The caller can detect fallback and inspect the sample count. Missing observations are represented by `NAN` and do not change that cost field.
 
-This is deliberately a small CPU-only foundation. It does not yet measure GPU costs, estimate uncertainty, interpolate between prefix sizes, calculate dollars, persist calibration data, or make admission/eviction/reload/scheduler decisions. The fixed 128-key table is a prototype bound, not a production sizing claim. The nearest-prefix fallback is a guess and must remain visible to callers.
+`foundry_choose_reload_or_recompute` scores reload and recompute in estimated critical-path milliseconds, including queue delay and a linear deadline-lateness penalty. It falls back to recompute if the key is estimated by a prior/nearest bucket, samples are below the caller's threshold, or either action is unmeasured. This conservative rule avoids acting on generic priors as though they were exact measurements.
 
-## Build and run the C unit test
+`replay.c` is a deterministic synthetic CPU simulation comparing LRU-like recency, cost-ranked retention, and a slack-priced admission heuristic. It emits aggregate missed tokens, modeled deadline misses, and a modeled objective. This is an illustrative policy exercise: it does not ingest the archived request trace, model vLLM blocks/scheduling, calibrate costs from GPU runs, estimate confidence intervals, or establish an inference speedup. In particular, its synthetic reuse hints are oracle inputs; the result must not be presented as an online controller result.
+
+The first 20-seed run **failed** the 5% pre-GPU gate: slack-priced admission had 6.80% worse toy objective than the LRU-like baseline. Results, the command, and limitations are recorded in [`results/cpu-replay-2026-11-15.md`](results/cpu-replay-2026-11-15.md) and [`results/cpu-replay-2026-11-15.csv`](results/cpu-replay-2026-11-15.csv). This is a negative result for this particular toy heuristic, not a GPU result or a test of the full shared-cost hypothesis. No GPU run is warranted until a frozen historical trace replay passes the gate.
+
+The fixed 128-key estimator table is a prototype bound, not a production sizing claim. The nearest-prefix fallback is a guess and must remain visible to callers. No policy is integrated into vLLM.
+
+## Build and run the C unit test and synthetic replay
 
 With a C11 compiler:
 
@@ -17,6 +23,9 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
   -Ifoundry foundry/cost_model.c tests/test_cost_model.c \
   -lm -o cost_model_tests
 ./cost_model_tests
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+  -Ifoundry foundry/replay.c -lm -o foundry_replay
+./foundry_replay 32768 20
 ```
 
 On Windows, run from a Visual Studio Developer Command Prompt:
@@ -24,15 +33,20 @@ On Windows, run from a Visual Studio Developer Command Prompt:
 ```powershell
 cl /nologo /std:c11 /W4 /WX /TC /I foundry foundry\cost_model.c tests\test_cost_model.c /Fe:cost_model_tests.exe
 .\cost_model_tests.exe
+cl /nologo /std:c11 /W4 /WX /TC /I foundry foundry\replay.c /Fe:foundry_replay.exe
+.\foundry_replay.exe 32768 20
 ```
 
-The test covers invalid decay, caller-supplied prior fallback, exact lookup, EWMA updates, missing observations, nearest-prefix fallback, and GPU isolation.
+Or run `./foundry/run_replay.ps1` in PowerShell with Clang/GCC available on PATH.
+
+The unit test covers invalid decay, caller-supplied prior fallback, exact lookup, EWMA updates, missing observations, nearest-prefix fallback, GPU isolation, reload/recompute choice, and conservative fallback. Replay arguments are cache capacity in tokens and number of seeds.
 
 ## Next gates
 
-1. Add input validation and calibration serialization in C.
-2. Reproduce the existing measured latency table with repeated measurements before using it as policy input. Measure the 512-token bucket directly.
-3. Add C replay tests against the existing archived traces, keeping the old experiment harness runnable.
-4. Only then build a C policy consumer and an ablation runner.
+1. Replace the synthetic reuse oracle with a frozen, explicitly versioned Trace v1 input and replay historical order.
+2. Add model uncertainty and reject policies whose held-out prediction error exceeds the pre-registered bound.
+3. Add calibration serialization in C and reproduce the measured latency table with repeated observations. Measure the 512-token bucket directly.
+4. Add C replay tests against archived traces, keeping the old harness runnable.
+5. Only then add admission/eviction counterfactuals and an ablation runner.
 
 The request-327 probes and remaining evidence gaps are recorded in [`docs/327-probe-plan.md`](../docs/327-probe-plan.md). The proposed next work is a deadline-coupled C controller with a CPU replay gate before any additional GPU spend; see [`docs/next-optimization-plan.md`](../docs/next-optimization-plan.md).

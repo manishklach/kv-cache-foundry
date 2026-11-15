@@ -16,6 +16,8 @@ int main(void)
     FoundryCostModel model;
     FoundryCostEstimate prior = {100.0, 200.0, 50.0, 0, 1, 1, 1};
     FoundryCostEstimate estimate;
+    FoundryActionContext context = {0.0, 0.0, 50.0, 3.0, 2};
+    FoundryActionDecision decision;
     FoundryCostKey h100_1024 = key("H100-SXM", 1024);
     FoundryCostKey h100_2048 = key("H100-SXM", 2048);
     FoundryCostKey h200_1024 = key("H200-SXM", 1024);
@@ -33,11 +35,23 @@ int main(void)
     assert(fabs(estimate.reload_ms - 15.0) < 1e-12);
     assert(fabs(estimate.recompute_ms - 40.0) < 1e-12);
     assert(fabs(estimate.keep_ms - 20.0) < 1e-12);
+    assert(foundry_choose_reload_or_recompute(&model, &h100_1024, &context,
+                                               &decision));
+    assert(decision.action == FOUNDRY_ACTION_RESTORE);
+    assert(decision.conservative_fallback == 0);
+    context.restore_queue_ms = 30.0;
+    assert(foundry_choose_reload_or_recompute(&model, &h100_1024, &context,
+                                               &decision));
+    assert(decision.action == FOUNDRY_ACTION_RECOMPUTE);
 
     assert(foundry_cost_model_estimate(&model, &h100_2048, &estimate, &fallback));
     assert(fallback == 1 && estimate.reload_ms == 15.0);
     assert(foundry_cost_model_estimate(&model, &h200_1024, &estimate, &fallback));
     assert(fallback == 1 && estimate.reload_ms == 100.0);
+    assert(foundry_choose_reload_or_recompute(&model, &h200_1024, &context,
+                                               &decision));
+    assert(decision.action == FOUNDRY_ACTION_RECOMPUTE);
+    assert(decision.conservative_fallback == 1);
     assert(!foundry_cost_model_observe(&model, &h100_1024, NAN, NAN, NAN));
     assert(!foundry_cost_model_observe(&model, &h100_1024, -1.0, NAN, NAN));
 

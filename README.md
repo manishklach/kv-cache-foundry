@@ -4,7 +4,7 @@ KV Cache Foundry develops and tests KV-cache policies for LLM inference. It incl
 
 ## Unified cost model prototype
 
-The first CPU-only piece of the proposed unified decision engine is now in [`foundry/`](foundry/README.md). The C11 model provides per-GPU, per-prefix EWMA estimates for reload, recompute, and keep costs, with an explicit prior and nearest-prefix fallback. It is a prototype, not yet calibrated from live GPU measurements, and it does not yet implement cache policies. New core decision code remains in C. The request-327 anomaly is grounded against archived traces and now has isolated L4 and controlled-pair H100 probes; the staged plan and remaining evidence gaps are in [`docs/327-probe-plan.md`](docs/327-probe-plan.md).
+The first CPU-only pieces of the proposed unified decision engine are in [`foundry/`](foundry/README.md). The C11 model provides per-GPU, per-prefix EWMA estimates and a conservative reload-versus-recompute scorer; a separate synthetic replay compares three toy cache rules. These are not calibrated end-to-end, are not integrated into vLLM, and do not establish a serving speedup. The replay currently uses synthetic reuse hints and modeled latency costs; historical trace ingestion and uncertainty estimates remain next. New core decision code remains in C. The request-327 anomaly is grounded against archived traces and has isolated L4 and controlled-pair H100 probes; see [`docs/327-probe-plan.md`](docs/327-probe-plan.md).
 
 | Experiment | Validation | Change | Result |
 | --- | --- | --- | --- |
@@ -53,7 +53,7 @@ The diagram and result README show the cold request, verified warm control, and 
 
 The next experiment should join the repo's separate admission, eviction, restore/recompute, and prefetch work in one C decision core. Score each action with measured critical-path milliseconds, GPU-memory opportunity cost, and the request's remaining SLO slack. The exploratory idea is **slack-priced residency**: value cached blocks by how much latency slack their next reuse can recover, and charge prefetch for queue delay and decode interference.
 
-This is a systems hypothesis, not a uniqueness claim. Agent-aware eviction/prefetch and non-prefix RAG chunk reuse already have active prior art. The plan starts with a C-only trace replay, preserves request history, and sets a 5% improvement gate before any further Runpod spend. See the [staged plan, prior-art map, measurement gates, and kill criteria](docs/next-optimization-plan.md).
+This is a systems hypothesis, not a uniqueness claim. Agent-aware eviction/prefetch and non-prefix RAG chunk reuse already have active prior art. The first C scorer and toy replay exist, but slack-priced admission failed the pre-GPU gate by 6.80% on the toy objective; the replay does not use historical traces or measured GPU costs. We will first freeze a historical trace format and validate on held-out traces. No Runpod GPU run is justified until that CPU gate passes. See the [staged plan and the complete negative result](docs/next-optimization-plan.md) · [replay report](foundry/results/cpu-replay-2026-11-15.md).
 
 ## H100 cost-ranked block eviction
 

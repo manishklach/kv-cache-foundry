@@ -129,3 +129,60 @@ int foundry_cost_model_estimate(const FoundryCostModel *model,
         *used_fallback = 1;
     return 1;
 }
+
+static double objective(double finish_ms,
+                        const FoundryActionContext *context)
+{
+    double tardiness = finish_ms > context->remaining_slack_ms
+                           ? finish_ms - context->remaining_slack_ms
+                           : 0.0;
+    return finish_ms + context->lateness_penalty_per_ms * tardiness;
+}
+
+int foundry_choose_reload_or_recompute(const FoundryCostModel *model,
+                                       const FoundryCostKey *key,
+                                       const FoundryActionContext *context,
+                                       FoundryActionDecision *out)
+{
+    FoundryCostEstimate estimate;
+    int fallback = 1;
+
+    if (model == NULL || !valid_key(key) || context == NULL || out == NULL ||
+        !isfinite(context->restore_queue_ms) || context->restore_queue_ms < 0.0 ||
+        !isfinite(context->recompute_queue_ms) || context->recompute_queue_ms < 0.0 ||
+        !isfinite(context->remaining_slack_ms) || context->remaining_slack_ms < 0.0 ||
+        !isfinite(context->lateness_penalty_per_ms) ||
+        context->lateness_penalty_per_ms < 0.0)
+        return 0;
+
+    if (!foundry_cost_model_estimate(model, key, &estimate, &fallback))
+        return 0;
+
+    *out = (FoundryActionDecision){0};
+    out->used_fallback = fallback;
+    if (fallback || estimate.samples < context->minimum_samples ||
+        !estimate.has_reload || !estimate.has_recompute) {
+        out->action = FOUNDRY_ACTION_RECOMPUTE;
+        out->predicted_finish_ms = estimate.has_recompute
+                                       ? estimate.recompute_ms + context->recompute_queue_ms
+                                       : 0.0;
+        out->objective_ms = objective(out->predicted_finish_ms, context);
+        out->conservative_fallback = 1;
+        return 1;
+    }
+
+    double restore = estimate.reload_ms + context->restore_queue_ms;
+    double recompute = estimate.recompute_ms + context->recompute_queue_ms;
+    double restore_objective = objective(restore, context);
+    double recompute_objective = objective(recompute, context);
+    if (restore_objective < recompute_objective) {
+        out->action = FOUNDRY_ACTION_RESTORE;
+        out->predicted_finish_ms = restore;
+        out->objective_ms = restore_objective;
+    } else {
+        out->action = FOUNDRY_ACTION_RECOMPUTE;
+        out->predicted_finish_ms = recompute;
+        out->objective_ms = recompute_objective;
+    }
+    return 1;
+}
