@@ -26,6 +26,12 @@ The replay completed on one Runpod H200 SXM with driver 595.91.07 and vLLM 0.32.
 
 For request 858, the top two reported log probabilities were tied in every warm run. Its uncached winner led by 0.03125 log-probability units. Across all five requests, the gap between the top two reported values ranged from zero to 0.0625. The near ties and stock LRU flips support numerical sensitivity to cached versus uncached execution as an explanation. The isolated probes do not reproduce historical eviction pressure or establish the allocator's behavior across the original workload. In particular, request 858 was the only eviction probe, so its concurrency-four configuration did not generate a four-request batch.
 
+### Focused request-327 H100 probe
+
+The [November 15 H100 probe](results/h100-probe-327/) checked request 327 on the historical H100 / vLLM 0.32.0 pairing. The cold request returned token 220 with zero cached tokens; candidates 220 and 287 tied at `-5.6167111397`. The same-prefix request-335 control returned token 8 with 4,096 cached tokens. In six client-side concurrent pairs with trace neighbor 326, request 327 returned 220 every time and retained the top-two tie. The run did not recreate the historical token-287 result or record the vLLM scheduler's actual batch membership. It is diagnostic only: no algorithm changed and no speedup is claimed.
+
+The [probe runner](probe_327.py) reproduces the exact seed-0 prompt from the trace and records top-20 scores, cached-token usage, and total client response time. See the result directory for raw JSONL, server logs, exact hardware/runtime metadata, and the limitations of this test.
+
 A prefix cache with limited space can evict useful KV state when many requests use a document only once. Waiting for a second request before admitting a prefix can protect recurring documents. It also misses the only reuse when a document appears exactly twice.
 
 ## H100 engine benchmark

@@ -4,7 +4,7 @@ KV Cache Foundry develops and tests KV-cache policies for LLM inference. It incl
 
 ## Unified cost model prototype
 
-The first CPU-only piece of the proposed unified decision engine is now in [`foundry/`](foundry/README.md). The C11 model provides per-GPU, per-prefix EWMA estimates for reload, recompute, and keep costs, with an explicit prior and nearest-prefix fallback. It is a prototype, not yet calibrated from live GPU measurements, and it does not yet implement cache policies. New core decision code remains in C. The current 327 anomaly has been grounded against the archived traces and has a corrected, staged probe plan in [`docs/327-probe-plan.md`](docs/327-probe-plan.md). A live GPU run is deferred: the Runpod account had $0.38 credit at the latest check, insufficient for a useful, bounded session including model startup.
+The first CPU-only piece of the proposed unified decision engine is now in [`foundry/`](foundry/README.md). The C11 model provides per-GPU, per-prefix EWMA estimates for reload, recompute, and keep costs, with an explicit prior and nearest-prefix fallback. It is a prototype, not yet calibrated from live GPU measurements, and it does not yet implement cache policies. New core decision code remains in C. The request-327 anomaly is grounded against archived traces and now has isolated L4 and controlled-pair H100 probes; the staged plan and remaining evidence gaps are in [`docs/327-probe-plan.md`](docs/327-probe-plan.md).
 
 | Experiment | Validation | Change | Result |
 | --- | --- | --- | --- |
@@ -40,6 +40,10 @@ The focused audit revisited five requests from the H100 admission and eviction t
 The first focused L4 probe replayed the exact token-ID prompt for request 327 from the concurrent eviction trace. Six isolated calls (two cold cache salts and four repeats) all selected token ID 220. In all six, token IDs 220 and 287 had identical top log probabilities (`-5.622137`), supporting a near-tie as a plausible explanation for the historical output variation. No token flip occurred in this L4 run. The response usage did not expose per-request cached-token counts; the vLLM aggregate prefix-cache hit rate was 66.7% after the six calls.
 
 This is a diagnostic lead, not a reproduction of the H100 anomaly: the run used an L4 and vLLM 0.33.0, while the historical eviction trials used H100 and vLLM 0.32.0. See [the focused results and exact hardware record](experiments/adaptive-admission/results/l4-probe-327/README.md) and [the staged probe plan](docs/327-probe-plan.md).
+
+## H100 request-327 controlled-pair probe
+
+The November 15 follow-up used one Runpod H100 SXM with vLLM 0.32.0 and the exact seed-0 request-327 token prompt. The cold request returned token 220 with zero cached tokens; its top two candidates, 220 and 287, were tied at `-5.616711`. The same-prefix request-335 control returned token 8 with 4,096 cached tokens. In six controlled concurrent pairs with trace neighbor 326, request 327 returned token 220 every time, again with a top-two tie. The run therefore confirms the near-tie on the historical H100 runtime but does not reproduce the one historical token-287 result or identify its exact batch cause. It changes no inference algorithm and makes no speedup claim. See [the full method, raw observations, logs, and hardware record](experiments/adaptive-admission/results/h100-probe-327/README.md).
 
 ## H100 cost-ranked block eviction
 

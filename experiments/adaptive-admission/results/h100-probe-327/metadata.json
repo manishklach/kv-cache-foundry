@@ -1,0 +1,126 @@
+{
+  "experiment": "request-327 H100 controlled-pair probe",
+  "date_utc": "2026-11-15",
+  "purpose": "Check whether the near-tied next-token scores observed on the L4 persist on an H100 with the historical vLLM version, and whether a narrow concurrent pair changes request 327's greedy output.",
+  "source_trace": {
+    "generator": "experiments/adaptive-admission/engine_experiment.py:workload(seed=0)",
+    "target": {
+      "index": 327,
+      "phase": 1,
+      "key": 39,
+      "prefix_tokens": 4096,
+      "final_token_id": 9327,
+      "expected_prompt_tokens": 4097
+    },
+    "warm_control": {
+      "index": 335,
+      "phase": 1,
+      "key": 39,
+      "prefix_tokens": 4096,
+      "final_token_id": 9335,
+      "expected_prompt_tokens": 4097
+    },
+    "concurrent_neighbor": {
+      "index": 326,
+      "phase": 1,
+      "key": 38,
+      "expected_prompt_tokens": 4097
+    },
+    "prompt_generation": "The first 4096 IDs are random.Random('admission-bench-<phase>-<key>').choices(range(1000, 8000), k=4096); the final token is 9000 + trace index."
+  },
+  "method": {
+    "requests": 14,
+    "sequence": "One cold request 327; request 335 reusing the same cache salt as the cold target; then six two-request concurrent submission pairs, request 327 plus request 326.",
+    "pair_submission": "Each pair was submitted using a two-worker ThreadPoolExecutor. The calls overlap at the client; actual vLLM scheduler batch membership was not instrumented.",
+    "cache_salts": "Request 327 and request 335 share one cache salt for the warm control. Each concurrent request uses a distinct salt so the pair cannot reuse the other's cached KV.",
+    "sampling": {
+      "temperature": 0,
+      "max_tokens": 1,
+      "logprobs": 20,
+      "ignore_eos": true,
+      "add_special_tokens": false,
+      "return_token_ids": true
+    },
+    "latency": "total_ms is local client wall time for a non-streaming HTTPS request through the Runpod proxy. TTFT was not measured."
+  },
+  "results": {
+    "request_327_cold": {
+      "output_token_id": 220,
+      "cached_tokens": 0,
+      "top_two": [
+        {"token_id": 220, "logprob": -5.616711139678955},
+        {"token_id": 287, "logprob": -5.616711139678955}
+      ],
+      "top_two_gap": 0.0
+    },
+    "request_335_same_prefix_control": {
+      "output_token_id": 8,
+      "cached_tokens": 4096
+    },
+    "concurrent_pairs": {
+      "pair_count": 6,
+      "request_327_output_token_ids": [220, 220, 220, 220, 220, 220],
+      "request_327_cached_tokens": [0, 0, 0, 0, 0, 0],
+      "request_327_top_two_gaps": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      "request_326_output_token_ids": [220, 220, 220, 220, 220, 220],
+      "request_327_median_total_ms": 1120.2141499961726,
+      "request_326_median_total_ms": 1448.4661000024062,
+      "latency_caveat": "These low-repeat whole-response times include HTTPS proxy and client overhead. They are not TTFT or a performance comparison."
+    }
+  },
+  "interpretation": "The H100 probe reproduces the exact 220/287 top-score tie and confirms the expected 4096-token warm hit at request 335. The six controlled neighbor pairs did not reproduce the historical token-287 output at request 327. This supports near-tie sensitivity as a plausible explanation but does not isolate actual batching, preceding allocator/cache history, or first-run effects. No inference algorithm was changed and no speedup is claimed.",
+  "runpod": {
+    "gpu_product": "H100 SXM",
+    "gpu_telemetry_name": "H100 80GB HBM3",
+    "gpu_memory_reported": "80 GiB",
+    "region_and_cloud": "US-NE-1 Secure Cloud",
+    "host_cpu": "Intel(R) Xeon(R) Platinum 8470",
+    "host_vcpu": 26,
+    "host_memory": "251 GB",
+    "container_disk": "30 GB temporary; no persistent volume",
+    "deployment_catalog_card": "8 vCPU / 125 GB RAM; the provisioned Pod Details reported 26 vCPU / 251 GB RAM.",
+    "telemetry_snapshot": {
+      "uptime": "11m 19s",
+      "container_disk_used": "8 GB (27%)",
+      "host_memory_used": "3.247 GiB / 233.8 GiB",
+      "gpu_memory_used": "64 GiB / 80 GiB",
+      "gpu_utilization": "0% at snapshot time",
+      "temperature": "36 C",
+      "power": "127 W",
+      "power_limit": "700 W",
+      "performance_state": "P0",
+      "driver_version": "595.91.07",
+      "cuda_version_from_Runpod_telemetry": "13.2"
+    },
+    "image": "vllm/vllm-openai:v0.32.0",
+    "template_id": "pvcdqlwm9r",
+    "model": "Qwen/Qwen3-4B-Instruct-2507",
+    "model_revision": "main (not pinned)",
+    "vllm_version_from_startup_log": "0.32.0",
+    "server_arguments": "--host 0.0.0.0 --port 8000 --dtype bfloat16 --enforce-eager --gpu-memory-utilization 0.80 --max-model-len 4608 --enable-prompt-tokens-details",
+    "server_log_observations": [
+      "Prefix caching enabled.",
+      "Chunked prefill enabled with max_num_batched_tokens=8192.",
+      "Eager mode disabled torch.compile, CUDA graphs, and JIT kernel warmup.",
+      "vLLM reported 54.21 GiB available KV cache memory and 394,720 KV tokens."
+    ],
+    "capture_limits": [
+      "No standalone nvidia-smi output, GPU UUID, or PCIe link state was captured.",
+      "CUDA 13.2 is the Runpod Telemetry value; a separate nvcc/toolkit version was not captured.",
+      "The model revision resolved as main and was not pinned to a commit hash."
+    ]
+  },
+  "billing": {
+    "compute_usd_per_hour": 4.39,
+    "temporary_container_disk_usd_per_hour": 0.004,
+    "observed_uptime_seconds": 679,
+    "estimated_run_cost_usd": 0.83,
+    "estimate_note": "Calculated from displayed hourly rates and observed Pod uptime; exact account debit was not queried.",
+    "state_after_probe": "Stopped; Runpod showed total $0.00/hr and idle disk $0.00/day."
+  },
+  "artifacts": [
+    "probe.jsonl: all 14 raw per-request observations with token IDs, cache usage, top-20 log probabilities, and whole-response timings.",
+    "vllm-server.log: downloaded vLLM startup/request log; includes one rejected setup payload and a short API smoke request outside the 14-row dataset. Runpod private proxy peer addresses redacted.",
+    "../probe_327.py: probe runner source."
+  ]
+}
