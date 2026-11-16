@@ -1,0 +1,42 @@
+name: C11 CPU checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  c11:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JSON Lines validator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq
+      - name: Compile and run C cost-model checks
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Ifoundry \
+            foundry/cost_model.c tests/test_cost_model.c -lm -o /tmp/test_cost_model
+          /tmp/test_cost_model
+      - name: Compile replay and verify distinct policies
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Ifoundry \
+            foundry/replay.c -lm -o /tmp/foundry_replay
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            tests/check_replay_csv.c -o /tmp/check_replay_csv
+          /tmp/foundry_replay 32768 20 > /tmp/replay.csv
+          /tmp/check_replay_csv /tmp/replay.csv
+      - name: Validate each committed JSONL line
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            line_number=0
+            while IFS= read -r json_line || [[ -n "$json_line" ]]; do
+              line_number=$((line_number + 1))
+              if [[ -z "$json_line" ]] || ! printf '%s\n' "$json_line" | jq -e 'type == "object"' >/dev/null; then
+                echo "Invalid JSONL object: $file:$line_number" >&2
+                exit 1
+              fi
+            done < "$file"
+          done < <(find . -type f -name '*.jsonl' -not -path './.git/*' -print0)

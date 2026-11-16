@@ -7,7 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { KEY_COUNT = 64, REQUESTS_PER_PHASE = 1024, PHASES = 4 };
+enum {
+    KEY_COUNT = 64,
+    REQUESTS_PER_PHASE = 1024,
+    PHASES = 4,
+    POLICY_LRU = 0,
+    POLICY_ORACLE_REUSE_RANK = 1,
+    POLICY_SLACK_PRICED_ADMISSION = 2
+};
 static const uint32_t lengths[] = {512, 1024, 2048, 4096};
 
 typedef struct {
@@ -47,16 +54,23 @@ static uint32_t prefix_length(unsigned x)
     return lengths[(x >> 8) & 3u];
 }
 
-static void evict_one(Cache *cache, unsigned current)
+static void evict_one(Cache *cache, unsigned current, int oracle_reuse_rank)
 {
     unsigned victim = KEY_COUNT;
     double lowest = HUGE_VAL;
     for (unsigned i = 0; i < KEY_COUNT; ++i) {
         if (!cache->entries[i].resident)
             continue;
-        double score = cache->entries[i].priority;
-        if (cache->entries[i].last_use < current)
-            score *= 1.0 / (double)(current - cache->entries[i].last_use + 1u);
+        double score;
+        if (oracle_reuse_rank) {
+            /* Deliberately privileged comparator: fixed future reuse count,
+             * decayed by age. This is not a deployable policy. */
+            score = cache->entries[i].priority /
+                (double)(current - cache->entries[i].last_use + 1u);
+        } else {
+            /* LRU chooses the least recently used resident entry. */
+            score = (double)cache->entries[i].last_use;
+        }
         if (score < lowest) {
             lowest = score;
             victim = i;
@@ -70,7 +84,7 @@ static void evict_one(Cache *cache, unsigned current)
 
 static void access_cache(Cache *cache, unsigned key, uint32_t length,
                          unsigned request, unsigned reuse_distance,
-                         double miss_cost_ms, int controller)
+                         double miss_cost_ms, int policy)
 {
     Entry *entry = &cache->entries[key];
     const double slack = (request % 13u == 0u) ? 5.0 : 80.0;
@@ -88,7 +102,7 @@ static void access_cache(Cache *cache, unsigned key, uint32_t length,
     entry->priority = (double)(REUSE[key] + 1u) * (double)length;
 
     int admit = 1;
-    if (controller && !entry->resident) {
+    if (policy == POLICY_SLACK_PRICED_ADMISSION && !entry->resident) {
         /* Admission proxy: protect scarce slack for long rebuilds when the
          * request is not predicted to repeat soon. */
         double expected_saved = (double)REUSE[key] / 20.0 * miss_cost_ms;
@@ -100,7 +114,7 @@ static void access_cache(Cache *cache, unsigned key, uint32_t length,
     if (!admit || length > cache->capacity)
         return;
     while (cache->occupied + length > cache->capacity)
-        evict_one(cache, request);
+        evict_one(cache, request, policy == POLICY_ORACLE_REUSE_RANK);
     if (!entry->resident) {
         entry->resident = 1;
         cache->occupied += length;
@@ -138,9 +152,8 @@ static void run(unsigned seed, unsigned capacity, int policy,
                 reuse_distance = (i % 16u < 8u) ? 8u : 1u;
             }
             double miss_cost = 2.0 + (double)length / 96.0;
-            int controller = policy == 2;
             access_cache(&cache, key, length, tick, reuse_distance,
-                         miss_cost, controller);
+                         miss_cost, policy);
         }
     }
     *missed = cache.missed_tokens;
@@ -160,7 +173,9 @@ int main(int argc, char **argv)
     }
 
     puts("policy,capacity_tokens,seeds,mean_missed_tokens,mean_deadline_misses,mean_objective_ms");
-    const char *names[] = {"lru_like", "synthetic_reuse_rank", "slack_priced_admission"};
+    const char *names[] = {
+        "lru_like", "oracle_reuse_rank", "slack_priced_admission_lru_eviction"
+    };
     for (int policy = 0; policy < 3; ++policy) {
         unsigned long long missed_sum = 0, deadline_sum = 0;
         double objective_sum = 0.0;

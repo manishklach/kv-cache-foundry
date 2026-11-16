@@ -1,4 +1,4 @@
 policy,capacity_tokens,seeds,mean_missed_tokens,mean_deadline_misses,mean_objective_ms
-lru_like,32768,20,4877081.60,179.70,65608.9333
-synthetic_reuse_rank,32768,20,4877081.60,179.70,65608.9333
-slack_priced_admission,32768,20,5199462.40,199.55,70067.0167
+lru_like,32768,20,5700480.00,193.65,76303.2500
+oracle_reuse_rank,32768,20,4877081.60,179.70,65608.9333
+slack_priced_admission_lru_eviction,32768,20,5578700.80,206.00,74993.5667
