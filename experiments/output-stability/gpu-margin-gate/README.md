@@ -1,5 +1,32 @@
 # GPU top-two margin gate
 
+## Follow-up: decode GEMM backend A/B on H100
+
+The CUDA-graph profile showed `nvjet_sm90_tst_*` kernels. A related vLLM-derived
+H100 trace identifies the `splitK` family as cuBLAS split-K GEMMs used for
+small-M decode. We tested the supported vLLM 0.32 knob `--linear-backend
+auto` versus `cutlass` on the same BF16 Qwen3-4B-Instruct-2507 model and H100.
+
+The forced CUTLASS backend **did not change the observed kernels**. Both Nsight
+captures had identical NVJet names and counts. vLLM 0.32's CUTLASS linear
+registry covers quantized kernels (FP8, INT8, NVFP4, W4A8), while this model's
+weights are BF16. So this switch was not a valid optimization for the tested
+model. Steady-state measurements after dropping the first of eight waves per
+block showed 1.60% lower combined output throughput and 1.94% higher median
+latency for CUTLASS; these small, single-Pod differences do not establish that
+CUTLASS itself is slower. All responses returned 64 tokens and the greedy
+content hash matched across all four blocks. No kernel was implemented or
+integrated, and no speedup is claimed.
+
+The [full report](results/h100-linear-backend-ab-2026-11-17.md) documents the
+hardware, kernel sums, full-run and steady-state figures, confounders, and
+cleanup. The source is the [C/libcurl request harness](linear_backend_ab.c);
+raw rows: [auto a](results/linear-backend-auto-a-2026-11-17.csv), [auto b](results/linear-backend-auto-b-2026-11-17.csv), [CUTLASS a](results/linear-backend-cutlass-a-2026-11-17.csv), and [CUTLASS b](results/linear-backend-cutlass-b-2026-11-17.csv).
+
+This closes the backend-switch path for BF16 Qwen3-4B on vLLM 0.32. A future
+kernel experiment must target the measured BF16 decode GEMM shapes directly;
+do not spend another GPU run on this CUTLASS setting for the same model.
+
 This small CUDA C benchmark tests a GPU primitive motivated by the request-327
 tie: return the top two logits, a margin, and a threshold flag with a stable
 token-id tie-break. It compares a one-CTA reduction, a hierarchical reduction,
