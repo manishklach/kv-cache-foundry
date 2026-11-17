@@ -1,6 +1,6 @@
 # KV Cache Foundry
 
-KV Cache Foundry develops and tests KV-cache policies for LLM inference. It includes live vLLM allocator changes, C experiments on Runpod H100 and H200 GPUs, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
+KV Cache Foundry develops and tests inference performance ideas. It includes live vLLM allocator changes, C experiments on Runpod H100 and H200 GPUs, a C-style CUDA top-two margin kernel, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
 
 ## Unified cost model prototype
 
@@ -14,6 +14,7 @@ The first CPU-only pieces of the proposed unified decision engine are in [`found
 | [Reload versus recompute](#h200-reload-versus-recompute) | H200 SXM | Select the cheaper path using prefix length and copy backlog | 19.2% lower summed time than always reloading across the held-out synthetic grid |
 | [Decode-aware KV reload](#decode-aware-kv-reload-prototype) | H200 SXM | Pace KV writes using live decode latency and allow prefix recomputation | Higher p95 first-token latency in all six settings. All 648 requests matched the reference tokens. |
 | [Deadline-aware KV prefetch](#deadline-aware-kv-prefetch) | RTX PRO 6000 Blackwell | Overlap per-layer KV copies with attention and compare FIFO against deadline ordering | Layer prefetch cut median latency by about 18% for both prefix lengths. All three policies met 27/72 targets. |
+| [GPU top-two margin gate](#output-stability-and-h100-margin-gate-kernel) | H100 SXM 80GB | Hierarchical GPU reduction with deterministic tie-breaking over 151,936 logits | 6.52×–10.66× faster than a one-CTA reference; all CPU-oracle checks passed. Kernel-only result, not end-to-end inference. |
 
 ## Benchmark hardware and provenance
 
@@ -48,6 +49,12 @@ The November 15 follow-up used one Runpod H100 SXM with vLLM 0.32.0 and the exac
 Hardware record: H100 SXM 80GB HBM3 in US-NE-1 Secure Cloud; Intel Xeon Platinum 8470 host, 26 vCPU, 251 GB RAM; driver 595.91.07; CUDA 13.2; Qwen3-4B-Instruct-2507; `vllm/vllm-openai:v0.32.0`. The Pod ran 11m19s and was stopped; estimated cost from displayed rates was $0.83. Full telemetry and the estimate method are in the [probe metadata](experiments/adaptive-admission/results/h100-probe-327/metadata.json) and [hardware inventory](docs/hardware-inventory.md).
 
 The diagram and result README show the cold request, verified warm control, and six concurrent-pair checks. The raw JSONL, server log, and Runpod/vLLM metadata provide the evidence record.
+
+## Output stability and H100 margin-gate kernel
+
+The next beyond-KV investigation is to measure the throughput/output-stability frontier under different batch sizes, then ask whether a frozen first-token margin threshold can identify a small set of requests for extra verification. This is an evaluation direction, not a new-algorithm claim: batch-invariant inference and margin-triggered verification already have prior art. Request 327 motivates the measurement because its H100 top two tokens tied at zero margin, although the controlled pairs did not reproduce the old output flip.
+
+The throughput/output-stability frontier itself still has only the C11 TSV analyzer and pre-registered workload plan; it does not yet call a model server, so there are no new vLLM throughput or output-flip measurements. Client-side request concurrency will be reported as a proxy unless actual vLLM batch membership is recorded. Separately, the H100 GPU margin-gate microbenchmark measured a hierarchical top-two reduction at 6.52×–10.66× the speed of a single-CTA reference for batch sizes 1–32. All top-two outputs matched the CPU oracle, including a forced exact tie resolved consistently as token 220 over 287. This is a kernel primitive result, not an inference-wide speedup or production-engine comparison. See the [frontier plan and C analyzer](experiments/output-stability/README.md), the [GPU kernel benchmark and raw measurements](experiments/output-stability/gpu-margin-gate/README.md), and the [exact H100 hardware record](docs/hardware-inventory.md).
 
 ## Next optimization plan: deadline-coupled KV value controller
 
