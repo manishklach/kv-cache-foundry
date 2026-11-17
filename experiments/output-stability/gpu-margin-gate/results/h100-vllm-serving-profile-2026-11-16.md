@@ -31,12 +31,15 @@ The profiled aggregate reported:
 
 | Operation | Calls | Total CUDA time | Average per call | Reported CUDA share |
 | --- | ---: | ---: | ---: | ---: |
+| `aten::mm` | 4,350 | 102.546 ms | 23.631 µs | 75.35% |
 | `aten::argmax` | 30 | 134.846 µs | 4.495 µs | 0.10% |
 | PyTorch reduction kernel underlying argmax | 30 | 134.846 µs | 4.495 µs | 0.10% |
 
 The profile also recorded 28 engine iterations with an eight-request generation
 batch (`execute_context_0(0)_generation_8(8)`). These are aggregated profiler
-times, not end-to-end latency or a standalone microbenchmark.
+times, not end-to-end latency or a standalone microbenchmark. `aten::mm` is an
+aggregate PyTorch operator row; its CUDA time covers underlying GEMM work and
+should not be mistaken for one kernel's wall-clock duration.
 
 The best standalone hierarchical argmax proxy from the previous H100 run was
 6.275–6.318 µs for batch sizes 1–2; it was slower than the 4.495 µs average
