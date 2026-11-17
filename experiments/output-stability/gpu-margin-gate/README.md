@@ -86,6 +86,13 @@ This benchmark does **not** invoke or time that PyTorch kernel. The
 `*_greedy_argmax_proxy` variants only model the argmax operation shape, so the
 results cannot support a claim of superiority to production vLLM sampling.
 
+A follow-up Torch profiler capture inside a live vLLM 0.32.0 server found
+`aten::argmax` averaging 4.495 µs per call (0.10% of profiler-reported CUDA
+time) for the tested H100/Qwen/concurrency-8 setup. That was faster than our
+best standalone hierarchical argmax proxy, so the standalone replacement is a
+no-go for this setup. The profiler adds overhead and this is a feasibility
+result, not a serving A/B; see the [serving-path profile report](results/h100-vllm-serving-profile-2026-11-16.md).
+
 The best top-two tile grew with batch size: 1,024 for rows 1–4, 2,048 for row
 8, 4,096 for row 16, and 8,192 for row 32. This is an empirical crossover for
 this H100, synthetic FP32 input, and current kernel implementation; it is not
