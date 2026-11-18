@@ -1,6 +1,6 @@
 # KV Cache Foundry
 
-KV Cache Foundry develops and tests inference performance ideas. It includes live vLLM allocator changes, C experiments on Runpod H100 and H200 GPUs, a C-style CUDA top-two margin kernel, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
+KV Cache Foundry develops and tests inference performance ideas. It includes live vLLM allocator changes, C experiments on Runpod H100, H200, and AMD MI350X GPUs, a C-style CUDA top-two margin kernel, and a C/C++ llama.cpp prototype that adjusts KV transfers in response to decode latency.
 
 ## Unified cost model prototype
 
@@ -18,7 +18,7 @@ The first CPU-only pieces of the proposed unified decision engine are in [`found
 
 ## Benchmark hardware and provenance
 
-The GPU experiments used Runpod H100 SXM, H200 SXM, and RTX PRO 6000 Blackwell Server Edition instances. The saved records include exact GPU names, memory totals, driver versions, and sampled PCIe link states for some runs; other archives preserve only the selected GPU class or vLLM's memory report. The [hardware inventory](docs/hardware-inventory.md) lists the hardware and software metadata by experiment and marks fields the historical artifacts do not establish. In particular, the H100 admission and eviction archives do not contain a saved `nvidia-smi` record, so their original driver and CUDA versions are unknown.
+The GPU experiments used Runpod H100 SXM, H200 SXM, RTX PRO 6000 Blackwell Server Edition, and AMD MI350X instances. The saved records include exact GPU names, memory totals, driver versions, and sampled PCIe link states for some runs; other archives preserve only the selected GPU class or vLLM's memory report. The [hardware inventory](docs/hardware-inventory.md) lists the hardware and software metadata by experiment and marks fields the historical artifacts do not establish. In particular, the H100 admission and eviction archives do not contain a saved `nvidia-smi` record, so their original driver and CUDA versions are unknown. The [AMD MI350X calibration](foundry/results/amd-mi350x-prefix-calibration.md) records its ROCm environment and explicitly marks the CPU and data center details not returned by Runpod.
 
 ## Deadline-aware KV prefetch
 
@@ -73,6 +73,10 @@ This is a systems hypothesis, not a uniqueness claim. Agent-aware eviction/prefe
 ## H100 prefix-cache cost calibration
 
 A short real-GPU calibration used one Runpod H100 SXM in US-NE-1 with vLLM 0.32.0 and Qwen3-4B-Instruct-2507. The C-only client checked cold and exact-prefix warm requests at 512, 1,024, 2,048, and 4,096 shared tokens. Prefix-cache accounting was correct in all 16 measured requests: cold requests had zero cached tokens and warm requests had full-prefix hits. TTFT was noisy with only two observations per condition; warm mean TTFT improved only at 1,024 and 2,048 tokens, and was slower at 512 and 4,096. Treat this as cache-path and client validation, **not an inference optimization or a speedup claim**. The complete hardware/software record, methodology, results, caveats, and raw CSV are in [`foundry/results/h100-sxm-prefix-calibration.md`](foundry/results/h100-sxm-prefix-calibration.md) and [`foundry/results/h100_sxm_prefix_calibration.csv`](foundry/results/h100_sxm_prefix_calibration.csv). The C client is [`foundry/gpu_calibrate.c`](foundry/gpu_calibrate.c).
+
+## AMD MI350X prefix-cache calibration
+
+A short Runpod AMD MI350X run served the same Qwen3-4B-Instruct-2507 workload using vLLM 0.34.0+rocm100. The existing C11 client verified 8/8 cold misses and 8/8 full-prefix warm hits at 512, 1,024, 2,048, and 4,096 tokens. With only two observations per condition, warm mean TTFT was lower at every size, but this is a calibration result rather than an optimization claim. It is not a direct H100 comparison: the AMD client ran locally over loopback and used a newer vLLM build. See the [hardware record, methodology, caveats, and raw measurements](foundry/results/amd-mi350x-prefix-calibration.md) and [`foundry/results/amd-mi350x-prefix-calibration.csv`](foundry/results/amd-mi350x-prefix-calibration.csv).
 
 ## H100 cost-ranked block eviction
 

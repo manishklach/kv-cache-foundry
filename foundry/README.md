@@ -20,6 +20,8 @@ The fixed 128-key estimator table is a prototype bound, not a production sizing 
 
 [`gpu_calibrate.c`](gpu_calibrate.c) is a C11 streaming client for measuring cold requests and exact-prefix hits against a vLLM OpenAI-compatible endpoint. The November 15, 2026 calibration ran on a Runpod H100 SXM with vLLM 0.32.0 and Qwen3-4B-Instruct-2507. It verified full cache hits at 512, 1,024, 2,048, and 4,096 prefix tokens. With two observations per condition, client-observed TTFT was noisy and warm requests were slower at 512 and 4,096 tokens. This validates that the cache path and client work; it does not show a speedup or evaluate the cost-model policy. See the [hardware record and analysis](results/h100-sxm-prefix-calibration.md) and [raw CSV](results/h100_sxm_prefix_calibration.csv).
 
+The November 18, 2026 AMD run used one Runpod MI350X with the official vLLM ROCm image and vLLM 0.34.0+rocm100. The same C11 client verified all 8 cold misses and all 8 exact-prefix warm hits. Warm means were lower in this two-repeat calibration, but the result is not a speedup claim and is not directly comparable to the H100 numbers: the AMD client ran over loopback and used a newer vLLM version. See the [exact hardware record and analysis](results/amd-mi350x-prefix-calibration.md) and [raw CSV](results/amd-mi350x-prefix-calibration.csv).
+
 Compile with a C11 compiler and run against a secured vLLM endpoint:
 
 ```sh
